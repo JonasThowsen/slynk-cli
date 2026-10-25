@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# lisp, from a checkout of slynk-cli: needs sbcl on PATH (README.md, "Install").
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec sbcl --script "$here/src/client.lisp" "$@"
