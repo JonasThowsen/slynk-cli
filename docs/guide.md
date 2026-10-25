@@ -121,6 +121,10 @@ To pause a FiveAM test where it fails, let FiveAM call the debugger:
 - **The image drifts from the files.** After many live changes it no longer
   matches them. `lisp stop` and `lisp start` again now and then, and trust
   the project's build and tests in a fresh process over the image.
+- **Only the project's files compile for the debugger.** They compile with
+  `(debug 3)`, so their frames show every local and can be restarted. A
+  `defun` you evaluate with `lisp eval` compiles with less; to debug a
+  function, change it in its file and `lisp compile` it.
 - **A restarted frame runs the new function; its callers stay compiled.**
   SBCL may have compiled a caller in the same file on what it derived about
   the old function, such as that it never returns. When a caller then

@@ -341,12 +341,18 @@ the image stopped, and with what."
           (subseq text 0 end))
         "")))
 
+(defun top-systems ()
+  "The names of the .asd files at the top of the root."
+  (sort (mapcar #'pathname-name
+                (directory (merge-pathnames "*.asd" *root*) :resolve-symlinks nil))
+        #'string<))
+
 (defun default-system (configuration)
   "The configuration's :system, else the system named after the one .asd
 file at the top of the root, else NIL."
   (or (getf configuration :system)
-      (let ((files (directory (merge-pathnames "*.asd" *root*) :resolve-symlinks nil)))
-        (and (= (length files) 1) (pathname-name (first files))))))
+      (let ((systems (top-systems)))
+        (and (= (length systems) 1) (first systems)))))
 
 (defun init-files (configuration)
   "The configuration's :init files, made absolute from the root."
@@ -434,8 +440,14 @@ file at the top of the root, else NIL."
                                     system)
                             (quit 1)))
                         (format t "image on port ~d (process ~d), ~:[no system loaded~;~:*~a ~
-                                   loaded~]; its output is in ~a~%next: lisp eval FORM~%"
+                                   loaded~]; its output is in ~a~%"
                                 port pid system (relative-name (state-file "image.log")))
+                        (let ((systems (top-systems)))
+                          (when (and (null system) systems)
+                            (format t "The root has ~{~a~^, ~}: lisp eval '(asdf:load-system ~
+                                       \"~a\")' loads one, or lisp stop and lisp start NAME.~%"
+                                    systems (first systems))))
+                        (format t "next: lisp eval FORM~%")
                         (quit 0))
                        ((not (alive-p pid))
                         (format t "the image stopped while starting:~%~a" (log-text))

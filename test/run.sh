@@ -115,6 +115,14 @@ expect 0 'no evaluation is running or paused'
 run stop
 expect 0 'stopped the image'
 
+# Two .asd files at the top: no system, and start names them.
+cp fixture.asd other.asd
+run start
+expect 0 'no system loaded' 'The root has fixture, other: '
+run stop
+expect 0 'stopped the image'
+rm other.asd
+
 # The system of the one .asd file at the top of the root.
 run start
 expect 0 'fixture loaded'
