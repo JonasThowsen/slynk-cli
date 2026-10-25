@@ -50,7 +50,8 @@
         };
         bench = pkgs.mkShell {
           # gzip and bzip2 for chipz-bug: its report uses gzip, its tests bzip2.
-          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux pkgs.gzip pkgs.bzip2 ];
+          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux pkgs.gzip pkgs.bzip2
+                      pkgs.bubblewrap ];
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
           BENCH_LISP = lisp pkgs;
           BENCH_SRC_CL_PPCRE = pkgs.sbclPackages.cl-ppcre.src;

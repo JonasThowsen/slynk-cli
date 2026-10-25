@@ -94,7 +94,10 @@ run_one() {
   fi
   local start end status=0 timed_out=false
   start="$(date +%s)"
+  # A /tmp of its own: agents write fixed names such as /tmp/repro.lisp, and
+  # runs side by side must not read each other's.
   (cd "$project" && env "${extra[@]}" PATH="$path" timeout --kill-after=30 "$limit" \
+     bwrap --dev-bind / / --tmpfs /tmp --setenv TMPDIR /tmp \
      claude -p --model "$model" --effort "$effort" \
        --output-format stream-json --verbose --no-session-persistence \
        --setting-sources project --strict-mcp-config --disable-slash-commands \

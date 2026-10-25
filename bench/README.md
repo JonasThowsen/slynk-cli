@@ -28,10 +28,11 @@ plugins, MCP servers or skills. The runner refuses to start when global
 instructions (`~/.claude/CLAUDE.md`) or the person's SBCL init files
 (`~/.sbclrc`, `/etc/sbclrc`) exist, so both arms and the check run SBCL
 without them; the SBCL's own sysinit, which only tells it where its
-sources are, is part of the SBCL. Each run is in a fresh directory, and a run that
-passes 30 minutes is stopped and counts as failed. Each task runs five
-times per arm, with Claude Code and Opus 5.5, at effort high and at
-medium.
+sources are, is part of the SBCL. Each run is in a fresh directory, with
+a `/tmp` of its own (bubblewrap), and a run that passes 30 minutes is
+stopped and counts as failed. Each task runs five times per arm, with
+Claude Code and Opus 5.5, at effort high and at medium; the hard tasks at
+effort high.
 
 The bench's SBCL has the libraries the tasks need, but never the library a
 task puts a defect into, so the only copy an agent can load is the task's
