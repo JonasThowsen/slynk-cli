@@ -36,6 +36,8 @@
         misc-extensions mt19937 named-readtables
         # jzon-bug: jzon's dependencies; its tests use fiveam and alexandria.
         closer-mop float-features trivial-gray-streams
+        # chipz-bug: its tests compress with salza2.
+        salza2
       ]);
     in
     {
@@ -47,13 +49,16 @@
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
         };
         bench = pkgs.mkShell {
-          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux ];
+          # gzip and bzip2 for chipz-bug: its report uses gzip, its tests bzip2.
+          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux pkgs.gzip pkgs.bzip2 ];
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
           BENCH_LISP = lisp pkgs;
           BENCH_SRC_CL_PPCRE = pkgs.sbclPackages.cl-ppcre.src;
           BENCH_SRC_LOCAL_TIME = pkgs.sbclPackages.local-time.src;
           BENCH_SRC_FSET = pkgs.sbclPackages.fset.src;
           BENCH_SRC_JZON = pkgs.sbclPackages.com_dot_inuoe_dot_jzon.src;
+          BENCH_SRC_CHIPZ = pkgs.sbclPackages.chipz.src;
+          BENCH_SRC_CL_JSON = pkgs.sbclPackages.cl-json.src;
         };
       });
 

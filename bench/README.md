@@ -67,6 +67,8 @@ user's, rewritten so it does not point at the fix.
 |------|---------|----------|
 | `fset-bug` | FSet 2.2.0, a functional collections library | sets and maps merge distinct cons keys whose cdrs FSet cannot order; fix FSet's ordering, which lies under every collection (upstream 7a2cb81, https://github.com/slburson/fset/issues/56) |
 | `jzon-bug` | jzon 1.1.4, a JSON reader and writer | floats with no fractional part are written with shifted digits and a garbage character; fix the Schubfach float printer (upstream be8542e, https://github.com/Zulu-Inuoe/jzon/issues/45) |
+| `chipz-bug` | chipz, a real fix reverted | `make-decompressing-stream` fails on a gzip file that `decompress` reads fine, because the inflater loses its place when its input buffer ends inside a stored block's header; from upstream commit f3ce12e, https://github.com/sharplispers/chipz/pull/10 |
+| `cl-json-bug` | cl-json, a real fix reverted | encoding a decoded document with objects nested three deep kills SBCL with "Help! 11 nested errors", because a handler does its fallback work without unwinding; from upstream commit 1941150, https://github.com/hankhero/cl-json/issues/1 (fixed by https://github.com/hankhero/cl-json/pull/5) |
 
 ## Running
 

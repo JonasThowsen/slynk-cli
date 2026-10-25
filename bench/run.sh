@@ -39,9 +39,9 @@ command -v claude >/dev/null || refuse "claude is not on PATH"
 [ ! -e /etc/sbclrc ] || refuse "/etc/sbclrc would reach every run; move it away first"
 sbcl --noinform --non-interactive --no-userinit --no-sysinit --eval '(require "asdf")' \
   --eval '(when (some (lambda (name) (asdf:find-system name nil))
-                      (list "cl-ppcre" "local-time" "fset" "com.inuoe.jzon"))
+                      (list "cl-ppcre" "local-time" "fset" "com.inuoe.jzon" "chipz" "cl-json"))
             (sb-ext:exit :code 1))' >/dev/null 2>&1 \
-  || refuse "the bench SBCL can load a task's library (cl-ppcre, local-time, fset, com.inuoe.jzon); a task's copy must be the only one"
+  || refuse "the bench SBCL can load a library a task puts a defect into; a task's copy must be the only one"
 
 # PATH without any lisp command, for the arm without it.
 plain_path=""
