@@ -1,0 +1,13 @@
+--- a/src/resolver.lisp
++++ b/src/resolver.lisp
+@@ -221,7 +221,9 @@
+                (trail resolution (lambda () (setf (version-set-intervals set) intervals))))
+              (narrow-version-set set (requirement-versions requirement)))
+             (t
+-             (setf set (requirement-versions requirement)
++             ;; A copy: the set is narrowed in place, and a constraint's
++             ;; own set is shared by every dependency with its text.
++             (setf set (copy-version-set (requirement-versions requirement))
+                    (gethash package allowed) set)
+              (vector-push-extend package order)
+              (trail resolution (lambda ()

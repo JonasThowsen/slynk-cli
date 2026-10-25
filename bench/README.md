@@ -59,16 +59,22 @@ The tasks are what Lisp work is, not built for the tool to win:
 
 ### Hard tasks
 
-Real bugs that a library's maintainers fixed, put back into the version
-nixpkgs pins, with the regression test taken out; the report is the
-user's, rewritten so it does not point at the fix.
+The tasks above all passed in both arms within a few minutes. The hard
+ones take a strong agent longer, and the distance from where a bug shows
+to its cause is larger. Four are real bugs a library's maintainers fixed,
+put back into the version nixpkgs pins with the regression test taken
+out; the report is a user's, rewritten so it does not point at the fix.
+The others are projects of the bench's own, of about 2000 lines each in
+several packages, with their own tests.
 
 | task | project | the work |
 |------|---------|----------|
-| `fset-bug` | FSet 2.2.0, a functional collections library | sets and maps merge distinct cons keys whose cdrs FSet cannot order; fix FSet's ordering, which lies under every collection (upstream 7a2cb81, https://github.com/slburson/fset/issues/56) |
-| `jzon-bug` | jzon 1.1.4, a JSON reader and writer | floats with no fractional part are written with shifted digits and a garbage character; fix the Schubfach float printer (upstream be8542e, https://github.com/Zulu-Inuoe/jzon/issues/45) |
-| `chipz-bug` | chipz, a real fix reverted | `make-decompressing-stream` fails on a gzip file that `decompress` reads fine, because the inflater loses its place when its input buffer ends inside a stored block's header; from upstream commit f3ce12e, https://github.com/sharplispers/chipz/pull/10 |
-| `cl-json-bug` | cl-json, a real fix reverted | encoding a decoded document with objects nested three deep kills SBCL with "Help! 11 nested errors", because a handler does its fallback work without unwinding; from upstream commit 1941150, https://github.com/hankhero/cl-json/issues/1 (fixed by https://github.com/hankhero/cl-json/pull/5) |
+| `fset-bug` | FSet 2.2.0, functional collections | sets and maps merge distinct cons keys whose cdrs FSet cannot order; the cause is in the ordering under every collection (upstream 7a2cb81, https://github.com/slburson/fset/issues/56) |
+| `jzon-bug` | jzon 1.1.4, JSON | floats with no fractional part are written with shifted digits and a garbage character; the cause is in the Schubfach float printer (upstream be8542e, https://github.com/Zulu-Inuoe/jzon/issues/45) |
+| `chipz-bug` | chipz 0.8, decompression | `make-decompressing-stream` fails on a gzip file that `decompress` reads fine; the inflater loses its place when its input ends inside a stored block's header (upstream f3ce12e, https://github.com/sharplispers/chipz/pull/10) |
+| `cl-json-bug` | cl-json 0.6.0, JSON | encoding a document with objects nested three deep kills SBCL with "Help! 11 nested errors"; a handler does its fallback work without unwinding (upstream 1941150, https://github.com/hankhero/cl-json/issues/1) |
+| `deep-bug` | a dependency resolver and a registry snapshot | the resolver fails on a package whose constraint plainly allows a release, and the cause is layers away from the error |
+| `stateful-bug` | a full-text search index and a sample archive that takes about a minute to build | an update is lost after a particular sequence of operations on the full archive, which a small index does not show |
 
 ## Running
 
