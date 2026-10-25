@@ -50,3 +50,7 @@ Claude Code 2.1.310 (Claude Code), SBCL 2.6.4, slynk-cli 2de39a7-dirty
 | with | 35/35 | 59 | 0.28 | 303k | 0 |
 | without | 35/35 | 48 | 0.25 | 235k | 0 |
 
+
+The medium runs are marked `2de39a7-dirty`: the one change was in
+`bench/run.sh`, creating `bench/results/` before the first run; the tool,
+the guide and the tasks were those of 2de39a7.

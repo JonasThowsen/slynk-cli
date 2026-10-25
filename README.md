@@ -234,13 +234,41 @@ high and at medium: 140 runs, 2026-10-25.
 | medium | with `lisp` | 35/35 | 59 s | $0.28 | 303k |
 | medium | without | 35/35 | 48 s | $0.25 | 235k |
 
-With `lisp` the runs took longer and cost more. The agents read the guide
-and used `lisp` as a REPL that stays up, mostly `eval`, `start` and
-`compile`, and not its debugger: in the 70 runs with it, no `frame`,
-`backtrace` or `restart-frame`. These tasks could be solved by reading the
-code, and there the tool is overhead. Whether it helps where reading is not
-enough, in a larger code base or with a bug that shows only at run time, is
-not measured yet. Every run, per task: `bench/results/REPORT.md`.
+With `lisp` the runs took longer and cost more; with five runs per task
+and arm, the differences per task are within noise, but they point the
+same way in both effort levels. Most tokens (92%) are cache reads, so cost
+is the better measure.
+
+What the runs with `lisp` did:
+
+- Not every agent used it: 27 of 35 runs at high called `lisp` at all, 13
+  of 35 at medium. Those that never called it were as slow and as costly
+  as those that did (high: 83 s and $0.47 against 87 s and $0.35; medium:
+  60 s and $0.26 against 59 s and $0.29), so the difference to the runs
+  without comes at least as much from reading the guide (69 of 70 runs)
+  and the line pointing to it as from using the tool.
+- Those that used it used it as a REPL that stays up. Over the 70 runs:
+  `eval` 139 times, `start` 56, `stop` 42, `wait` 25, `compile` 19,
+  `abort` 14, `status` 9, `definition` 2, and never `frame`, `backtrace`,
+  `restart-frame`, `xref` or `inspect`.
+- An evaluation paused in the debugger in 12 runs (`question`,
+  `slow-repro`, `local-time-bug`), and each time the agent aborted it or
+  evaluated again rather than looking at the frames. Some of those pauses
+  came from the tool itself: `lisp start` in cl-ppcre, which has two
+  `.asd` files at the top, loads no system, and the agent's next form
+  failed.
+- `slow-repro`, the one bug that shows only after a slow setup, had the
+  largest difference: 134 s and $0.37 with `lisp` against 82 s and $0.21
+  without at high, 87 s against 62 s at medium. The agents without it
+  found the bug by reading; those with it often built the data in the
+  image first.
+
+So on tasks a capable agent solves by reading, `lisp` and its guide cost
+time and money and buy nothing. Whether they help where reading is not
+enough, in a code base too large to read or with bugs found only by
+running, is the next thing to measure. The sums per task and arm are in
+`bench/results/REPORT.md`, and every run, with its commands, in
+`bench/results/*.jsonl`.
 
 ## Development
 

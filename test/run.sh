@@ -323,6 +323,12 @@ expect 0 'stopped'
 echo '(:system "dup" :colour "red")' >"$work/conf/.slynk-cli.sexp"
 run start
 expect 1 'must be a property list of :system, :lisp and :init'
+# Read without evaluation: #. is refused, and its form never runs.
+echo "(:system #.(progn (with-open-file (out \"$work/evaluated\" :direction :output) t) \"dup\"))" \
+  >"$work/conf/.slynk-cli.sexp"
+run start
+expect 1 'cannot be read'
+[ ! -e "$work/evaluated" ] || fail "reading .slynk-cli.sexp evaluated #."
 
 # No .asd file: no system.  No Slynk: start says how to get one.
 mkdir -p "$work/bare" "$work/home"
@@ -335,4 +341,35 @@ code=0
 env -u SLYNK_CLI_SLYNK HOME="$work/home" CL_SOURCE_REGISTRY= "$lisp" start >"$out" 2>&1 </dev/null \
   || code=$?
 expect 1 'no Slynk found'
+
+# Slynk through ASDF.
+code=0
+env -u SLYNK_CLI_SLYNK HOME="$work/home" CL_SOURCE_REGISTRY="$SLYNK_CLI_SLYNK" \
+  "$lisp" start >"$out" 2>&1 </dev/null || code=$?
+expect 0 'no system loaded'
+run stop
+expect 0 'stopped'
+
+# Slynk in a SLY that Emacs installed, and the person's init file read,
+# with a Quicklisp in it: the system loads through ql:quickload.
+mkdir -p "$work/home/.emacs.d/elpa/sly-20260101" "$work/quick"
+ln -s "$SLYNK_CLI_SLYNK" "$work/home/.emacs.d/elpa/sly-20260101/slynk"
+cat >"$work/home/.sbclrc" <<'LISP'
+(require "asdf")
+(defpackage #:ql (:use #:cl) (:export #:quickload))
+(defvar ql::*loaded* '())
+(defun ql:quickload (name)
+  (push name ql::*loaded*)
+  (asdf:load-system name))
+LISP
+cp "$project/fixture.asd" "$project/fixture.lisp" "$work/quick/"
+cd "$work/quick"
+code=0
+env -u SLYNK_CLI_SLYNK HOME="$work/home" CL_SOURCE_REGISTRY= "$lisp" start >"$out" 2>&1 </dev/null \
+  || code=$?
+expect 0 'fixture loaded'
+run eval '(list ql::*loaded* (and (fboundp (quote lisp-fixture::outer)) t))'
+expect 0 '= \(\("fixture"\) T\)$'
+run stop
+expect 0 'stopped'
 echo "== lisp checks passed"
