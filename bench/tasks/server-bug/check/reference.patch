@@ -1,0 +1,14 @@
+--- a/src/heap.lisp
++++ b/src/heap.lisp
+@@ -79,7 +79,10 @@
+     (let ((top (aref heap 0))
+           (last (vector-pop heap)))
+       (when (plusp (length heap))
+-        (setf (aref heap 0) last)
++        ;; LAST keeps the index it had at the end unless it is set here:
++        ;; SIFT-DOWN sets it only when LAST moves on down.
++        (setf (aref heap 0) last
++              (job-heap-index last) 0)
+         (sift-down heap 0))
+       (setf (job-heap-index top) nil)
+       top)))

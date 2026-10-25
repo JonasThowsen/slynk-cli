@@ -64,8 +64,9 @@ ones take a strong agent longer, and the distance from where a bug shows
 to its cause is larger. Four are real bugs a library's maintainers fixed,
 put back into the version nixpkgs pins with the regression test taken
 out; the report is a user's, rewritten so it does not point at the fix.
-The others are projects of the bench's own, of about 2000 lines each in
-several packages, with their own tests.
+The others are projects of the bench's own, of 1000 to 2000 lines each
+in several packages, with their own tests; `slow-report` is about speed,
+not a bug.
 
 | task | project | the work |
 |------|---------|----------|
@@ -75,6 +76,8 @@ several packages, with their own tests.
 | `cl-json-bug` | cl-json 0.6.0, JSON | encoding a document with objects nested three deep kills SBCL with "Help! 11 nested errors"; a handler does its fallback work without unwinding (upstream 1941150, https://github.com/hankhero/cl-json/issues/1) |
 | `deep-bug` | a dependency resolver and a registry snapshot | the resolver fails on a package whose constraint plainly allows a release, and the cause is layers away from the error |
 | `stateful-bug` | a full-text search index and a sample archive that takes about a minute to build | an update is lost after a particular sequence of operations on the full archive, which a small index does not show |
+| `server-bug` | a job server with worker threads and a line protocol | a job is never run, and a worker fails on another job that was cancelled; the cause was laid earlier, outside that thread |
+| `slow-report` | a monthly report over a sample access log | the report takes almost a minute; make it take under 15 seconds with the same output |
 
 ## Running
 
