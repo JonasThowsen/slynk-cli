@@ -57,6 +57,13 @@ The tasks are what Lisp work is, not built for the tool to win:
 | `feature` | a project of its own | add a small feature, checked by tests the agent does not see |
 | `question` | cl-ppcre | answer a question about the code in `ANSWER.md`, checked against the answer |
 
+### Hard tasks
+
+| task | project | the work |
+|------|---------|----------|
+| `server-bug` | a project of its own | a threaded job server never runs a job, and its worker fails on another that was cancelled; the cause is laid earlier, out of that thread |
+| `slow-report` | a project of its own | a report over a month of logs takes almost a minute; make it take under 15 seconds with the same output, the causes found by profiling |
+
 ## Running
 
 ```sh

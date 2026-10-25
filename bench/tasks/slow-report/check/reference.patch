@@ -1,0 +1,45 @@
+--- a/src/report.lisp
++++ b/src/report.lisp
+@@ -78,12 +78,15 @@
+   "Returns the summaries of the routes of REQUESTS, the most requested
+ first, and routes as often requested in the order of their names."
+   (let ((summaries '())
+-        ;; Sorted by route, the requests of each route come together.
+-        (sorted (stable-sort (copy-list requests) #'string< :key #'request-route)))
++        ;; Sorted by route, the requests of each route come together. Each
++        ;; request's route is worked out once, not at each comparison.
++        (sorted (stable-sort (mapcar (lambda (request) (cons (request-route request) request))
++                                     requests)
++                             #'string< :key #'car)))
+     (loop while sorted
+-          do (let* ((route (request-route (first sorted)))
+-                    (end (position route sorted :key #'request-route :test-not #'string=)))
+-               (push (summarize-route route (subseq sorted 0 end)) summaries)
++          do (let* ((route (car (first sorted)))
++                    (end (position route sorted :key #'car :test-not #'string=)))
++               (push (summarize-route route (mapcar #'cdr (subseq sorted 0 end))) summaries)
+                (setf sorted (and end (nthcdr end sorted)))))
+     (sort summaries (lambda (a b)
+                       (or (> (route-summary-requests a) (route-summary-requests b))
+--- a/src/stats.lisp
++++ b/src/stats.lisp
+@@ -7,13 +7,16 @@
+   "Returns an alist from each of the keys of ITEMS, as KEY gives them,
+ to how many of ITEMS have it, in the order the keys first appear. Keys are
+ compared with EQUAL."
+-  (let ((counts '()))
++  ;; The entries are found through a hash table, not by searching the
++  ;; alist: there may be thousands of keys, such as visitors.
++  (let ((entries (make-hash-table :test 'equal))
++        (counts '()))
+     (dolist (item items)
+       (let* ((key (funcall key item))
+-             (entry (assoc key counts :test #'equal)))
++             (entry (gethash key entries)))
+         (if entry
+             (incf (cdr entry))
+-            (push (cons key 1) counts))))
++            (push (setf (gethash key entries) (cons key 1)) counts))))
+     (nreverse counts)))
+ 
+ (defun most-common (counts &optional count)
