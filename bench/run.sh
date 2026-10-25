@@ -53,7 +53,7 @@ stamp="$(date +%Y-%m-%d)"
 results="$bench/results"
 # Away from this repository, so an agent looking around finds no check.
 runs="${BENCH_RUNS:-$HOME/.cache/slynk-cli-bench}/$stamp-$model-$effort"
-mkdir -p "$runs"
+mkdir -p "$runs" "$results"
 record="$results/$stamp-$model-$effort.jsonl"
 claude_version="$(claude --version | head -1)"
 sbcl_version="$(sbcl --version)"

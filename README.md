@@ -221,7 +221,26 @@ not pause; it goes where it would in any image.
 
 ## Does it help?
 
-*To be filled in from `bench/results/` once the benchmark has run.*
+Not on the tasks measured so far. On seven tasks in Common Lisp projects
+(bugs reported in cl-ppcre and local-time, a failing test, a bug behind a
+slow setup, a macro bug, a small feature, a question about cl-ppcre's
+code), Claude Code with Opus 5.5 passed every task in both arms, at effort
+high and at medium: 140 runs, 2026-10-25.
+
+| effort | arm | passed | median time | median cost | median tokens |
+|--------|-----|--------|-------------|-------------|---------------|
+| high | with `lisp` | 35/35 | 85 s | $0.37 | 449k |
+| high | without | 35/35 | 69 s | $0.31 | 325k |
+| medium | with `lisp` | 35/35 | 59 s | $0.28 | 303k |
+| medium | without | 35/35 | 48 s | $0.25 | 235k |
+
+With `lisp` the runs took longer and cost more. The agents read the guide
+and used `lisp` as a REPL that stays up, mostly `eval`, `start` and
+`compile`, and not its debugger: in the 70 runs with it, no `frame`,
+`backtrace` or `restart-frame`. These tasks could be solved by reading the
+code, and there the tool is overhead. Whether it helps where reading is not
+enough, in a larger code base or with a bug that shows only at run time, is
+not measured yet. Every run, per task: `bench/results/REPORT.md`.
 
 ## Development
 
