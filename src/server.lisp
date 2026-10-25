@@ -13,7 +13,8 @@
 
 (defpackage #:slynk-cli
   (:use #:cl)
-  (:export #:serve #:*root* #:*state* #:under-root-p #:call-with-project-policy))
+  (:export #:serve #:*root* #:*state* #:under-root-p #:call-with-project-policy
+           #:foreign-pause #:run-in-main-thread #:serve-main-thread))
 (in-package #:slynk-cli)
 
 (defparameter *output-lines* 200
@@ -293,7 +294,9 @@ or NIL.  The position is NIL when the location gives none."
 (defstruct (evaluation (:constructor make-evaluation (id text package limit)))
   id text package limit
   thread
-  (state :running)                      ; :running :paused :finished :aborted :unreadable
+  (state :running)                      ; :running :paused :finished :aborted :unreadable :resumed
+  foreign                               ; paused in a thread lisp did not start
+  main                                  ; runs, or is paused, in the image's main thread
   (values '())                          ; of the last form, when finished
   failure                               ; why it could not be read, or was aborted
   output
@@ -344,12 +347,18 @@ its *PACKAGE* here.")
     (/ (+ (evaluation-ran evaluation) (if since (- (get-internal-real-time) since) 0))
        internal-time-units-per-second)))
 
-(defun start-evaluation (text package limit)
-  "Start evaluating the forms of TEXT in PACKAGE, in a thread of its own."
-  (let ((evaluation (sb-thread:with-mutex (*evaluations-lock*)
-                      (let ((evaluation (make-evaluation (incf *count*) text package limit)))
-                        (setf (gethash *count* *evaluations*) evaluation)))))
-    (setf (evaluation-output evaluation) (make-output (princ-to-string (evaluation-id evaluation)))
+(defun new-evaluation (text package limit)
+  "A new evaluation, numbered and kept."
+  (sb-thread:with-mutex (*evaluations-lock*)
+    (let ((evaluation (make-evaluation (incf *count*) text package limit)))
+      (setf (gethash *count* *evaluations*) evaluation))))
+
+(defun start-evaluation (text package limit &optional main)
+  "Start evaluating the forms of TEXT in PACKAGE, in a thread of its own; on
+the image's main thread when MAIN, which that thread waits for."
+  (let ((evaluation (new-evaluation text package (and (not main) limit))))
+    (setf (evaluation-main evaluation) main
+          (evaluation-output evaluation) (make-output (princ-to-string (evaluation-id evaluation)))
           (evaluation-running-since evaluation) (get-internal-real-time)
           (evaluation-thread evaluation)
           (sb-thread:make-thread #'run-evaluation
@@ -386,7 +395,10 @@ pauses it in PAUSE."
            (restart-case
                (progn
                  (setf (evaluation-abort-restart evaluation) (find-restart 'abort))
-                 (multiple-value-bind (values unreadable) (evaluate-forms evaluation)
+                 (multiple-value-bind (values unreadable)
+                     (if (evaluation-main evaluation)
+                         (evaluate-on-main evaluation)
+                         (evaluate-forms evaluation))
                    (cond (unreadable
                           (setf (evaluation-failure evaluation) unreadable)
                           (change-state evaluation :unreadable))
@@ -422,6 +434,82 @@ the last, or as second value why a form could not be read."
                 (return values))
               (setf values (multiple-value-list (eval form))))))))
 
+;;; The image's main thread.  Some code must run there, such as a C
+;;; library's event loop that is not safe to call from another thread.  With
+;;; :main in .slynk-cli.sexp the main thread runs the project's function, and
+;;; :main-thread-dispatcher names the function of one thunk that runs it
+;;; there; without :main, the main thread serves thunks from a queue of its
+;;; own.
+
+(defvar *main-thread-queue* (sb-concurrency:make-mailbox :name "lisp main thread"))
+
+(defvar *outer-restarts* '()
+  "The restarts around the main thread's work, SBCL's own for loading the
+image: a pause there leaves them out, since each would end that work.")
+
+(defun run-in-main-thread (thunk)
+  "Run THUNK in the main thread, when it serves the image's own queue."
+  (sb-concurrency:send-message *main-thread-queue* thunk))
+
+(defun serve-main-thread ()
+  "Run the thunks of the queue in this thread, the main one, one by one."
+  (loop (funcall (sb-concurrency:receive-message *main-thread-queue*))))
+
+(defun environment-value (name)
+  (let ((value (sb-ext:posix-getenv name)))
+    (and value (plusp (length value)) value)))
+
+(defun main-dispatcher ()
+  "The function that runs a thunk in the main thread."
+  (let ((main (environment-value "SLYNK_CLI_MAIN"))
+        (dispatcher (environment-value "SLYNK_CLI_DISPATCHER")))
+    (cond (dispatcher
+           (let ((symbol (read-symbol dispatcher)))
+             (unless (fboundp symbol)
+               (error "The main thread's dispatcher ~a is not a function (yet?)." dispatcher))
+             (symbol-function symbol)))
+          (main
+           (error "The main thread runs ~a, so a form gets there only through its own ~
+                   dispatcher: name it with :main-thread-dispatcher in .slynk-cli.sexp."
+                  main))
+          (t #'run-in-main-thread))))
+
+(defun read-symbol (name)
+  "The symbol NAME names, such as \"hrt:run-in-main-thread\", read without evaluation."
+  (let ((symbol (with-standard-io-syntax
+                  (let ((*read-eval* nil))
+                    (read-from-string name)))))
+    (unless (symbolp symbol)
+      (error "~a does not name a function." name))
+    symbol))
+
+(defun evaluate-on-main (evaluation)
+  "Evaluate EVALUATION's forms in the main thread, as EVALUATE-FORMS does, and
+wait for them.  An error there pauses the evaluation in the main thread."
+  (let ((reply (sb-concurrency:make-mailbox))
+        (package *package*))
+    (funcall (main-dispatcher)
+             (lambda ()
+               (let ((answer '(:unwound)))
+                 (unwind-protect
+                      (let ((*evaluation* evaluation)
+                            (*package* package)
+                            (sb-ext:*invoke-debugger-hook* #'pause)
+                            (*debugger-hook* nil))
+                        (with-evaluation-io ((evaluation-output evaluation))
+                          (multiple-value-bind (values unreadable) (evaluate-forms evaluation)
+                            (setf answer (list :done values unreadable *package*)))))
+                   (sb-concurrency:send-message reply answer)))))
+    (destructuring-bind (how &optional values unreadable package)
+        (sb-concurrency:receive-message reply)
+      (when (eq how :unwound)
+        ;; A restart of the main thread's own, such as its event loop's,
+        ;; went on past the forms.
+        (setf (evaluation-failure evaluation) "when the main thread went on past it")
+        (invoke-restart (find-restart 'abort)))
+      (setf *package* package)
+      (values values unreadable))))
+
 ;;; Paused: the debugger of an evaluation's thread.
 
 (defun pause (condition hook)
@@ -431,11 +519,38 @@ the last, or as second value why a form could not be read."
     (slynk-backend:call-with-debugging-environment
      (lambda ()
        (setf (evaluation-condition evaluation) condition
-             (evaluation-restarts evaluation) (compute-restarts condition)
+             (evaluation-restarts evaluation)
+             (let ((restarts (compute-restarts condition)))
+               (if (eq sb-thread:*current-thread* (sb-thread:main-thread))
+                   (remove-if (lambda (restart) (member restart *outer-restarts*)) restarts)
+                   restarts))
              (evaluation-bottom evaluation) (bottom-frame)
              (evaluation-note evaluation) nil)
        (change-state evaluation :paused)
        (loop (funcall (sb-concurrency:receive-message (evaluation-commands evaluation))))))))
+
+(defun foreign-pause (condition hook)
+  "The debugger of every thread lisp did not start, such as the main thread
+and a library's: the thread waits in it as a paused evaluation of its own."
+  (if *evaluation*
+      (pause condition hook)
+      (let* ((thread sb-thread:*current-thread*)
+             (main (eq thread (sb-thread:main-thread)))
+             (evaluation (new-evaluation (format nil "an error in thread ~s"
+                                                 (sb-thread:thread-name thread))
+                                         *package* nil)))
+        (setf (evaluation-foreign evaluation) t
+              (evaluation-main evaluation) main
+              (evaluation-thread evaluation) thread
+              (evaluation-output evaluation) (make-output (princ-to-string
+                                                           (evaluation-id evaluation)))
+              (evaluation-abort-restart evaluation) (find-restart 'abort condition))
+        (let ((*evaluation* evaluation))
+          (unwind-protect (pause condition hook)
+            (when (open-stream-p (evaluation-output evaluation))
+              (close (evaluation-output evaluation)))
+            (when (eq (evaluation-state evaluation) :paused)
+              (change-state evaluation :resumed)))))))
 
 (defun bottom-frame ()
   "The number of the frame of EVALUATE-FORMS: the frames from there on are
@@ -501,7 +616,8 @@ again with a note saying why."
                                        (or condition (and (stringp value) value)
                                            "no reason given")))
                          (change-state evaluation :paused))))
-                    (change-state evaluation :running)
+                    ;; A thread lisp did not start goes on with its own work.
+                    (change-state evaluation (if (evaluation-foreign evaluation) :resumed :running))
                     t)))
 
 (defun check-paused (evaluation)
@@ -519,8 +635,11 @@ again with a note saying why."
 (defun state-phrase (evaluation)
   "What EVALUATION is doing, as a phrase."
   (ecase (evaluation-state evaluation)
-    (:running (format nil "is running (~,1f s)" (seconds-run evaluation)))
-    (:paused "is paused in the debugger")
+    (:running (format nil "is running (~,1f s)~:[~; in the main thread~]" (seconds-run evaluation)
+                      (evaluation-main evaluation)))
+    (:paused (format nil "is paused in the debugger~:[~; in the main thread~]"
+                     (evaluation-main evaluation)))
+    (:resumed "went on: its thread resumed its own work")
     (:finished "has finished")
     (:aborted "was aborted")
     (:unreadable "could not be read")))
@@ -553,8 +672,13 @@ again with a note saying why."
 first frames.  Runs in its thread."
   (let ((condition (evaluation-condition evaluation))
         (id (evaluation-id evaluation)))
-    (format stream "evaluation ~d is paused in the debugger~%~@[~a~%~]~%~s: ~a~%"
-            id (evaluation-note evaluation) (type-of condition)
+    (format stream "evaluation ~d ~a~%~:[~*~;~
+                    It is ~a, which lisp did not start: go on with restart-frame, return, or a ~
+                    restart it offers. Never abort it: that unwinds frames lisp does not ~
+                    know, maybe a C library's.~%~]~@[~a~%~]~%~s: ~a~%"
+            id (state-phrase evaluation)
+            (evaluation-foreign evaluation) (evaluation-text evaluation)
+            (evaluation-note evaluation) (type-of condition)
             (handler-case (princ-to-string condition)
               (error () "(the condition cannot be printed)")))
     (format stream "~%restarts:~%")
@@ -574,9 +698,9 @@ first frames.  Runs in its thread."
     (case (evaluation-state evaluation)
       (:paused
        (format stream "~%next: lisp frame ~d F · eval --in ~d:F FORM · ~
-                       restart ~d R [FORM...] · restart-frame ~d F · return ~d F FORM · ~
-                       abort ~d~%"
-               id id id id id id))
+                       restart ~d R [FORM...] · restart-frame ~d F · return ~d F FORM~
+                       ~:[ · abort ~d~;~]~%"
+               id id id id id (main-thread-p evaluation) id))
       (:running
        (format stream "~%next: lisp wait ~d · lisp abort ~d~%" id id)))))
 
@@ -615,6 +739,8 @@ its exit code."
                   id (evaluation-failure evaluation)))
          (:aborted
           (format stream "evaluation ~d was aborted~@[ ~a~]~%" id (evaluation-failure evaluation)))
+         (:resumed
+          (format stream "evaluation ~d ~a~%" id (state-phrase evaluation)))
          (:running
           (format stream "evaluation ~d is still running (~,1f s)~%" id (seconds-run evaluation))
           (paused-others evaluation stream))
@@ -625,7 +751,7 @@ its exit code."
                         stream)))
        (describe-output (evaluation-output evaluation) stream)
        (next-steps evaluation stream))
-     (if (eq (evaluation-state evaluation) :finished) 0 1))))
+     (if (member (evaluation-state evaluation) '(:finished :resumed)) 0 1))))
 
 ;;; The limit on running time.
 
@@ -951,8 +1077,19 @@ TEXT's forms."
       (resume evaluation (lambda () (slynk-backend:return-from-frame frame `(progn ,@forms)))))
     (describe-evaluation evaluation wait)))
 
+(defun main-thread-p (evaluation)
+  "Whether EVALUATION runs, or is paused, in a thread abort must not unwind:
+the main thread, or one lisp did not start."
+  (or (evaluation-main evaluation) (evaluation-foreign evaluation)))
+
 (defun answer-abort (id)
   (let ((evaluation (find-evaluation id)))
+    (when (and (main-thread-p evaluation) (member (evaluation-state evaluation) '(:running :paused)))
+      (error "Evaluation ~d ~a, which lisp did not start; abort would unwind frames below it ~
+              that lisp does not know, maybe a C library's, and leave the thread broken. ~
+              ~:[It ends when its forms return~;Go on with lisp restart-frame ~d F, lisp return ~
+              ~d F FORM, or a restart it offers: lisp restart ~d R~]."
+             id (state-phrase evaluation) (eq (evaluation-state evaluation) :paused) id id id))
     ;; Interrupted, not sent a command: a paused evaluation's thread may be
     ;; busy with a form evaluated in a frame, and its abort restart is on
     ;; its stack either way.
@@ -983,10 +1120,12 @@ TEXT's forms."
                (or (find-package (string-upcase name)) (error "There is no package ~a." name))
                *current-package*)))
     (destructuring-bind (&key text package (wait 10) (limit 1800) id frame restart (from 0)
-                              (count *frames-shown*) file line kind name)
+                              (count *frames-shown*) file line kind name main)
         arguments
       (ecase command
-        (:eval (describe-evaluation (start-evaluation text (package-named package) limit) wait))
+        (:eval (when main (main-dispatcher))
+               (describe-evaluation (start-evaluation text (package-named package) limit main)
+                                    wait))
         (:eval-in (answer-eval-in id frame text wait))
         (:wait (describe-evaluation (find-evaluation id) wait))
         (:abort (answer-abort id))

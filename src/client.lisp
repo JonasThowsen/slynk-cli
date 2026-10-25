@@ -63,14 +63,20 @@ work tree, else the current directory."
                        (fail "~a cannot be read: ~a" (namestring file) condition)))))
              (unless (and (listp configuration) (evenp (length configuration))
                           (loop for key in configuration by #'cddr
-                                always (member key '(:system :lisp :init))))
-               (fail "~a must be a property list of :system, :lisp and :init"
+                                always (member key '(:system :lisp :init :main
+                                                     :main-thread-dispatcher))))
+               (fail "~a must be a property list of :system, :lisp, :init, :main and ~
+                      :main-thread-dispatcher"
                      (namestring file)))
+             (dolist (key '(:main :main-thread-dispatcher))
+               (unless (typep (getf configuration key) '(or null string))
+                 (fail "~(~s~) must name a function in a string, such as \"my-app::main\""
+                       key)))
              configuration)))))
 
 (defparameter *usage* "usage: lisp start [--port N] [SYSTEM]
        lisp stop | status
-       lisp eval [FORM | -] [--package P] [--wait S] [--limit S]
+       lisp eval [FORM | -] [--main] [--package P] [--wait S] [--limit S]
        lisp eval --in N:F FORM
        lisp wait N [--wait S]
        lisp abort N
@@ -247,6 +253,8 @@ the image stopped, and with what."
                         (setf (getf options :package) (value)))
                        ((string= argument "--in")
                         (setf (getf options :in) (value)))
+                       ((string= argument "--main")
+                        (setf (getf options :main) t))
                        ((and (> (length argument) 2) (string= argument "--" :end1 2))
                         (usage-error "unknown option ~a" argument))
                        (t (push argument positional))))))
@@ -288,7 +296,8 @@ the image stopped, and with what."
                        :frame (number-of (subseq in (1+ colon)) "--in")
                        :text (form-text positional)))
                (list :eval :text (form-text positional) :package (getf options :package)
-                     :wait wait :limit (getf options :limit 1800)))))
+                     :wait wait :limit (getf options :limit 1800)
+                     :main (getf options :main)))))
         ((string= command "wait")
          (list :wait :id (number-of (first (exactly positional 1)) "wait") :wait wait))
         ((string= command "abort")
@@ -404,11 +413,15 @@ file at the top of the root, else NIL."
                       (format nil "SLYNK_CLI_PORT=~d" (getf options :port 0))
                       (format nil "SLYNK_CLI_SYSTEM=~@[~a~]" system)
                       (format nil "SLYNK_CLI_INIT=~{~a~^~%~}" (init-files configuration))
+                      (format nil "SLYNK_CLI_MAIN=~@[~a~]" (getf configuration :main))
+                      (format nil "SLYNK_CLI_DISPATCHER=~@[~a~]"
+                              (getf configuration :main-thread-dispatcher))
                       (remove-if (lambda (variable)
                                    (some (lambda (name) (eql 0 (search name variable)))
                                          '("SLYNK_CLI_ROOT=" "SLYNK_CLI_STATE="
                                            "SLYNK_CLI_PORT=" "SLYNK_CLI_SYSTEM="
-                                           "SLYNK_CLI_INIT=")))
+                                           "SLYNK_CLI_INIT=" "SLYNK_CLI_MAIN="
+                                           "SLYNK_CLI_DISPATCHER=")))
                                  (sb-ext:posix-environ))))
              (process
                ;; SBCL starts it in a process group of its own, so the

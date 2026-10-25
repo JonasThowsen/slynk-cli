@@ -98,6 +98,28 @@ To pause a FiveAM test where it fails, let FiveAM call the debugger:
 `lisp eval '(let ((fiveam:*on-error* :debug) (fiveam:*on-failure* :debug)) (fiveam:run! (quote my-test)))'`.
 `(break)` in a function pauses there too.
 
+## The main thread
+
+Some code must run in the image's main thread, such as a window system's
+or a compositor's event loop written in C. A project like that names its
+loop with `:main` in `.slynk-cli.sexp`, so `lisp start` starts it, and
+names the function that hands work to that loop with
+`:main-thread-dispatcher`. Then:
+
+- `lisp eval --main FORM` evaluates FORM in the main thread, between the
+  loop's events, and answers as `eval` does. Anything that touches the
+  loop's state goes this way; a plain `lisp eval` runs in a thread of its
+  own, where such code is not safe.
+- An error in the main thread pauses it, whether in your FORM or in a
+  callback of the loop: the loop, and everything it serves, stands still
+  until you let it go on. `lisp status` shows it.
+- **Never abort an evaluation paused in the main thread.** The frames below
+  it are the C library's, and unwinding them leaves it broken; `lisp abort`
+  refuses. Go on with a restart the code offers, such as the loop's
+  `continue` (`lisp restart N R`), with `lisp return N F FORM` from the
+  frame that failed, or, after fixing and compiling the function, with
+  `lisp restart-frame N F`.
+
 ## Find your way
 
 - `lisp definition my-app:insert`: where it is defined, into SBCL and the
@@ -129,7 +151,9 @@ To pause a FiveAM test where it fails, let FiveAM call the debugger:
   SBCL may have compiled a caller in the same file on what it derived about
   the old function, such as that it never returns. When a caller then
   complains about values, compile the whole file.
-- **Only evaluations pause.** An error in a thread `eval` did not start,
-  such as a request to a server started from the image, does not pause.
+- **Other threads pause too.** An error in a thread `lisp` did not start,
+  such as a server's request, pauses it as an evaluation of its own;
+  `lisp status` lists it. Don't `abort` it: go on with a restart its code
+  offers, `restart-frame` or `return`.
 - **The image is yours.** Never connect to a port you did not start: a
   person's editor may be connected to it.

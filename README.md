@@ -99,6 +99,16 @@ evaluation, and every key is optional:
 - `:init`: files the image loads first, relative to the root, in
   `CL-USER`, before anything else. They may set up ASDF their own way, as
   a project with its own source registry does.
+- `:main`: a function, such as `"my-app::main"`, the image calls in its
+  main thread once it is ready, for a project whose code must run there,
+  such as a C library's event loop. `start` returns as soon as the image
+  is ready, while the function goes on; `stop` ends it with the image, and
+  its output goes to `image.log`. When it returns, the image says so there
+  and stays up.
+- `:main-thread-dispatcher`: a function of one argument, such as
+  `"my-app:run-in-main-thread"`, that runs a function of no arguments in
+  the main thread, for `eval --main` while `:main` runs there. It may
+  return at once; `lisp` waits for the function it was given.
 
 `.slynk-cli/` under the root, or the directory `SLYNK_CLI_STATE` names,
 holds the image's records: its port and process, `image.log` with its
@@ -110,7 +120,7 @@ into itself, so no project has to ignore it.
 ```
 lisp start [--port N] [SYSTEM]
 lisp stop | status
-lisp eval [FORM | -] [--package P] [--wait S] [--limit S]
+lisp eval [FORM | -] [--main] [--package P] [--wait S] [--limit S]
 lisp eval --in N:F FORM [--wait S]
 lisp wait N [--wait S]
 lisp abort N
@@ -145,13 +155,27 @@ that finished. The answer gives each value of the last form with a handle,
 output. `#@K` in a later form is a form whose value is that object.
 Standard input is empty.
 
+**The main thread.** `eval --main` evaluates the forms in the image's main
+thread instead, and answers as `eval` does. With `:main` in the
+configuration they get there through `:main-thread-dispatcher`; without
+`:main`, the main thread waits for them itself. An error there pauses the
+evaluation in the main thread. Its `--limit` does not apply, since nothing
+may interrupt that thread.
+
 **Paused.** An unhandled error, a `break`, or any other way into the
 debugger pauses the evaluation in its thread. The answer gives the
 condition and its type, the restarts numbered from 0, and the first 20
 frames numbered from 0, each with the file and line of its source where it
 has one, and the commands that go on from there. The evaluation's own
-frames end the backtrace; the server's frames are not shown. It stays
-paused until a command resumes or aborts it:
+frames end the backtrace; the server's frames are not shown.
+
+An error in a thread `lisp` did not start, such as the main thread running
+`:main`, a library's worker or a web server's request, pauses that thread
+the same way, as an evaluation of its own: `status` lists it, and the
+commands below work on it. Once a restart or `return` lets it go on, it is
+back at its own work, and the evaluation says so.
+
+A paused evaluation stays paused until a command resumes or aborts it:
 
 - `frame N F` gives frame F's function, its source location, and its
   arguments and locals, each value with a handle.
@@ -170,7 +194,11 @@ paused until a command resumes or aborts it:
   default.
 - `abort N` ends the evaluation, paused or running, through its abort
   restart, also while its thread is busy with a FORM of `eval --in`: it
-  interrupts the thread rather than sending it a command.
+  interrupts the thread rather than sending it a command. It refuses an
+  evaluation in the main thread or in a thread `lisp` did not start: the
+  frames below it are not `lisp`'s, maybe a C library's, and unwinding
+  them would leave the thread broken. Such an evaluation goes on by
+  `restart-frame`, `return`, or a restart its code offers.
 
 **Waiting.** A call waits for its evaluation to finish or pause for at
 most `--wait` seconds, 10 by default. After that it answers that
@@ -215,9 +243,9 @@ usage error.
 authentication and gives full access to the process, as it does for SLY.
 `lisp` reaches it through Slynk's wire protocol and calls only the
 server's own functions there, so the image is also an ordinary Slynk
-server that SLY can connect to. An error in a thread the evaluation did
-not start, such as a request to a web server started from the image, does
-not pause; it goes where it would in any image.
+server that SLY can connect to. The image keeps Slynk's own debugger out
+of its threads, so an error in one pauses as above rather than waiting for
+an editor.
 
 ## Does it help?
 
@@ -266,7 +294,9 @@ What the runs with `lisp` did:
 So on tasks a capable agent solves by reading, `lisp` and its guide cost
 time and money and buy nothing. Whether they help where reading is not
 enough, in a code base too large to read or with bugs found only by
-running, is the next thing to measure. The sums per task and arm are in
+running, is the next thing to measure. The runs measured the tool as of 2de39a7;
+later changes, such as the main thread, are not measured. The sums per
+task and arm are in
 `bench/results/REPORT.md`, and every run, with its commands, in
 `bench/results/*.jsonl`.
 

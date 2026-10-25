@@ -1,7 +1,8 @@
 ;;;; src/image.lisp -- what the image lisp start starts loads first
 ;;;; (README.md, "The project").  lisp start passes what it needs in the
 ;;;; environment: SLYNK_CLI_ROOT, SLYNK_CLI_STATE, SLYNK_CLI_PORT,
-;;;; SLYNK_CLI_SYSTEM and SLYNK_CLI_INIT.  Each step reports on standard
+;;;; SLYNK_CLI_SYSTEM, SLYNK_CLI_INIT and SLYNK_CLI_MAIN; the server reads
+;;;; SLYNK_CLI_DISPATCHER.  Each step reports on standard
 ;;;; output, which goes to image.log, in lines that start with "slynk-cli: ";
 ;;;; lisp start reads them there.
 
@@ -124,6 +125,9 @@ files of the same name, the one nearer the root wins."
      (,(namestring *root*) ,(namestring (merge-pathnames "fasl/" *state*)))
      :inherit-configuration))
   (load-slynk)
+  ;; Slynk would put its own debugger in every thread when a connection
+  ;; opens, one that waits for an editor; lisp's pauses them instead.
+  (setf (symbol-value (find-symbol "*GLOBAL-DEBUGGER*" "SLYNK")) nil)
   (load-server)
   ;; SLY's compile-file writes the compiled file beside the source; put it
   ;; with the image's other compiled files.
@@ -142,12 +146,44 @@ files of the same name, the one nearer the root wins."
           (error (condition)
             (say "loading ~a failed:~%~a" system condition)))
         (say "no system loaded")))
-  (say "ready")
-  ;; Standard input is empty; the image waits for its connections until it
-  ;; is stopped.
-  (loop (sleep 3600)))
+  (say "ready"))
+
+(defun main-function (name)
+  "The function NAME names, such as \"my-app::main\", read without evaluation."
+  (let ((symbol (ignore-errors (with-standard-io-syntax
+                                 (let ((*read-eval* nil)) (read-from-string name))))))
+    (unless (and symbol (symbolp symbol) (fboundp symbol))
+      (error "the :main function ~a is not defined" name))
+    symbol))
+
+(defun run-main-thread ()
+  "What the main thread does once the image is ready: the project's :main
+function, then the queue of forms for lisp eval --main, until the image is
+stopped.  An error in it, as in any thread lisp did not start, pauses it as
+an evaluation of its own."
+  (let ((hook (find-symbol "FOREIGN-PAUSE" "SLYNK-CLI"))
+        (main (environment "SLYNK_CLI_MAIN")))
+    (setf sb-ext:*invoke-debugger-hook* hook
+          (symbol-value (find-symbol "*OUTER-RESTARTS*" "SLYNK-CLI")) (compute-restarts))
+    (let ((sb-ext:*invoke-debugger-hook* hook)
+          (*debugger-hook* nil))
+      (when main
+        ;; No handler around the function itself: its errors pause.
+        (let ((function (handler-case (main-function main)
+                          (error (condition)
+                            (say "~a" condition)
+                            nil))))
+          (when function
+            (say "running ~a in the main thread" main)
+            (funcall function)
+            (say "~a returned" main))))
+      ;; Standard input is empty; the main thread serves lisp eval --main
+      ;; until the image is stopped.
+      (uiop:symbol-call "SLYNK-CLI" "SERVE-MAIN-THREAD"))))
 
 (handler-case (start)
   (error (condition)
     (say "the image could not start: ~a" condition)
     (sb-ext:exit :code 1 :abort t)))
+;; Outside the handler above, so an error in the main thread pauses.
+(run-main-thread)

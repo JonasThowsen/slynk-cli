@@ -285,6 +285,28 @@ sleep 3
 run restart "$id" 0
 expect 0 '= :DONE'
 
+# Without :main, the main thread serves eval --main itself.
+run eval --main '(list (eq sb-thread:*current-thread* (sb-thread:main-thread)) (progn (print :on-main) 1))'
+expect 0 '= \(T 1\)$' ':ON-MAIN'
+
+# An error in a thread lisp did not start pauses it as an evaluation of its
+# own; abort is refused there, and its own restart goes on.
+run eval '(progn (sb-thread:make-thread (lambda () (error "in a worker")) :name "worker") :started)'
+expect 0 ':STARTED'
+sleep 1
+run status
+expect 0 'is paused in the debugger: an error in thread "worker"'
+worker="$(grep -oE 'evaluation [0-9]+ is paused' "$out" | grep -oE '[0-9]+')"
+run wait "$worker"
+expect 1 'It is an error in thread "worker", which lisp did not start' 'in a worker'
+refuse "abort $worker"
+run abort "$worker"
+expect 1 'which lisp did not start; abort would unwind'
+run wait "$worker"
+restart="$(grep -oE '^ +[0-9]+  abort +abort thread' "$out" | grep -oE '^ +[0-9]+' | tr -d ' ')"
+run restart "$worker" "$restart"
+expect 0 "evaluation $worker went on"
+
 # Long output and long values are cut.
 run eval '(loop repeat 1000 do (print (make-string 30 :initial-element #\x)))'
 expect 0 'the last [0-9,]+ of 34,000 characters \(1,000 lines\); all of it in .*output/[0-9]+\.txt'
@@ -332,13 +354,119 @@ run stop
 expect 0 'stopped'
 echo '(:system "dup" :colour "red")' >"$work/conf/.slynk-cli.sexp"
 run start
-expect 1 'must be a property list of :system, :lisp and :init'
+expect 1 'must be a property list of :system, :lisp, :init, :main and :main-thread-dispatcher'
 # Read without evaluation: #. is refused, and its form never runs.
 echo "(:system #.(progn (with-open-file (out \"$work/evaluated\" :direction :output) t) \"dup\"))" \
   >"$work/conf/.slynk-cli.sexp"
 run start
 expect 1 'cannot be read'
 [ ! -e "$work/evaluated" ] || fail "reading .slynk-cli.sexp evaluated #."
+
+# :main runs the project's function in the main thread, and
+# :main-thread-dispatcher brings eval --main there.
+mkdir -p "$work/loop"
+cat >"$work/loop/workloop.asd" <<'LISP'
+(defsystem "workloop" :components ((:file "workloop")))
+LISP
+cat >"$work/loop/workloop.lisp" <<'LISP'
+(defpackage #:workloop (:use #:cl) (:export #:main #:run-in-main-thread))
+(in-package #:workloop)
+
+(defvar *work* '())
+(defvar *lock* (sb-thread:make-mutex :name "work"))
+(defvar *more* (sb-thread:make-waitqueue :name "more work"))
+
+(defun run-in-main-thread (thunk)
+  "Have the main loop run THUNK."
+  (sb-thread:with-mutex (*lock*)
+    (setf *work* (append *work* (list thunk)))
+    (sb-thread:condition-notify *more*)))
+
+(defun next-work ()
+  (sb-thread:with-mutex (*lock*)
+    (loop until *work* do (sb-thread:condition-wait *more* *lock*))
+    (pop *work*)))
+
+(defun callback (count)
+  "What a library calls back with COUNT, when an event comes."
+  (if (> count 1)
+      (error "callback got ~a" count)
+      count))
+
+(defun main ()
+  "Run the work handed over, one piece at a time, forever, as an event loop."
+  (loop (let ((thunk (next-work)))
+          (with-simple-restart (continue "Skip this work and go on with the next.")
+            (funcall thunk)))))
+LISP
+cat >"$work/loop/.slynk-cli.sexp" <<'LISP'
+(:main "workloop:main" :main-thread-dispatcher "workloop:run-in-main-thread")
+LISP
+cd "$work/loop"
+run start
+expect 0 'workloop loaded'
+grep -q 'slynk-cli: running workloop:main in the main thread' "$work/loop/.slynk-cli/image.log" \
+  || fail "the image did not run :main"
+run eval --main '(list (eq sb-thread:*current-thread* (sb-thread:main-thread)) (length (sb-thread:list-all-threads)))'
+expect 0 '= \(T [0-9]+\)$'
+
+# An error in a form of eval --main pauses it in the main thread: abort is
+# refused, and the loop's own restart goes on past it.
+run eval --main '(error "boom")'
+expect 1 'is paused in the debugger in the main thread' 'boom' 'continue +Skip this work'
+refuse '· abort [0-9]' 'Skip to toplevel' 'loading file'
+
+id="$(number_after 'evaluation ')"
+run frame "$id" 0
+expect 0 "frame 0 of evaluation $id"
+run abort "$id"
+expect 1 'abort would unwind'
+run wait "$id"
+restart="$(grep -E '^ +[0-9]+  continue +Skip this work' "$out" | head -1 | awk '{print $1}')"
+run restart "$id" "$restart"
+expect 1 "evaluation $id was aborted when the main thread went on past it"
+
+# An error in the main loop's own work, as in a C library's callback, pauses
+# the main thread as an evaluation of its own; restart-frame or a restart
+# goes on, and the loop still serves eval --main after.
+run eval '(workloop:run-in-main-thread (lambda () (error "in a callback")))'
+expect 0 'finished'
+sleep 1
+run status
+expect 0 'paused in the debugger in the main thread: an error in thread "main thread"'
+id="$(grep -oE 'evaluation [0-9]+ is paused' "$out" | grep -oE '[0-9]+')"
+run backtrace "$id"
+expect 0 'WORKLOOP:MAIN'
+run eval --in "$id:0" '(+ 1 2)'
+expect 0 '= 3$'
+run abort "$id"
+expect 1 'abort would unwind'
+run wait "$id"
+restart="$(grep -E '^ +[0-9]+  continue +Skip this work' "$out" | head -1 | awk '{print $1}')"
+run restart "$id" "$restart"
+expect 0 "evaluation $id went on"
+run eval --main '(+ 40 2)'
+expect 0 '= 42$'
+# A frame of the project's own code in the main thread returns a value.
+run eval '(workloop:run-in-main-thread (lambda () (print (workloop::callback 2))))'
+sleep 1
+run status
+id="$(grep -oE 'evaluation [0-9]+ is paused' "$out" | grep -oE '[0-9]+')"
+run return "$id" 0 1
+expect 0 "evaluation $id went on"
+run eval --main '(+ 1 1)'
+expect 0 '= 2$'
+run stop
+expect 0 'stopped'
+
+# :main without a dispatcher: eval --main says what is missing.
+echo '(:main "workloop:main")' >"$work/loop/.slynk-cli.sexp"
+run start
+expect 0 'workloop loaded'
+run eval --main '1'
+expect 1 'name it with :main-thread-dispatcher'
+run stop
+expect 0 'stopped'
 
 # No .asd file: no system.  No Slynk: start says how to get one.
 mkdir -p "$work/bare" "$work/home"
