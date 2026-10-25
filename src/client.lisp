@@ -380,7 +380,8 @@ file at the top of the root, else NIL."
       (fail ":lisp must be a list of strings, such as (\"sbcl\" \"--noinform\")"))
     (values (first lisp)
             (append (rest lisp)
-                    (list "--load" (namestring (merge-pathnames "image.lisp" *sources*)))))))
+                    (list "--load" (namestring (merge-pathnames "image.lisp" *sources*))
+                          "--eval" "(slynk-cli-image::run-main-thread)")))))
 
 (defun keep-out-of-git ()
   "The state directory keeps itself out of git, so no project has to."

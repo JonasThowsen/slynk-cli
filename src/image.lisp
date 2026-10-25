@@ -185,5 +185,8 @@ an evaluation of its own."
   (error (condition)
     (say "the image could not start: ~a" condition)
     (sb-ext:exit :code 1 :abort t)))
-;; Outside the handler above, so an error in the main thread pauses.
-(run-main-thread)
+
+;;; lisp start then has SBCL evaluate (run-main-thread) after loading this
+;;; file: outside the handler above, so an error in the main thread pauses,
+;;; and outside the load, so SBCL neither offers its restarts for loading
+;;; nor reports the load's place with each error.

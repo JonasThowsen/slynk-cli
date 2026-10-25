@@ -409,6 +409,14 @@ grep -q 'slynk-cli: running workloop:main in the main thread' "$work/loop/.slynk
   || fail "the image did not run :main"
 run eval --main '(list (eq sb-thread:*current-thread* (sb-thread:main-thread)) (length (sb-thread:list-all-threads)))'
 expect 0 '= \(T [0-9]+\)$'
+# A form in the main thread has no limit, and the watcher of the others'
+# limits goes on: it neither ends nor pauses.
+run eval --main '(progn (sleep 2.5) :slept)' --wait 6
+expect 0 '= :SLEPT$'
+run status
+expect 0 'no evaluation is running or paused'
+run eval '(progn (sleep 100) :done)' --limit 2 --wait 6
+expect 1 'was aborted after running 2 s, its limit'
 
 # An error in a form of eval --main pauses it in the main thread: abort is
 # refused, and the loop's own restart goes on past it.
@@ -445,6 +453,7 @@ run wait "$id"
 restart="$(grep -E '^ +[0-9]+  continue +Skip this work' "$out" | head -1 | awk '{print $1}')"
 run restart "$id" "$restart"
 expect 0 "evaluation $id went on"
+refuse 'While evaluating the form'
 run eval --main '(+ 40 2)'
 expect 0 '= 42$'
 # A frame of the project's own code in the main thread returns a value.

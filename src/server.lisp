@@ -756,11 +756,15 @@ its exit code."
 ;;; The limit on running time.
 
 (defun watch-limits ()
-  "Abort every evaluation that has run longer than its limit, once a second."
+  "Abort every evaluation that has run longer than its limit, once a second.
+An evaluation in the main thread has none.  This thread is lisp's own, so it
+must not end or pause: an error checking one evaluation leaves it for the
+next second."
   (loop
    (sleep 1)
    (dolist (evaluation (evaluations-in :running))
-     (when (> (seconds-run evaluation) (evaluation-limit evaluation))
+     (when (ignore-errors (and (evaluation-limit evaluation)
+                               (> (seconds-run evaluation) (evaluation-limit evaluation))))
        (setf (evaluation-failure evaluation)
              (format nil "after running ~d s, its limit" (evaluation-limit evaluation)))
        (interrupt-abort evaluation)))))
