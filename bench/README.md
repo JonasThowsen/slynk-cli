@@ -83,11 +83,12 @@ not a bug.
 
 ```sh
 nix develop .#bench
-bench/run.sh --model claude-opus-5-5 --effort high --repeat 5 [--jobs 4] [TASK...]
+bench/run.sh --model claude-opus-5-5 --effort high --repeat 5 [--jobs 4] [--label L] [TASK...]
 bench/report.sh bench/results/*.jsonl > bench/results/REPORT.md
 ```
 
-Each run is one line of `results/DATE-MODEL-EFFORT.jsonl`: task, arm,
+Each run is one line of `results/DATE-MODEL-EFFORT.jsonl`, or
+`DATE-MODEL-EFFORT-LABEL.jsonl` with `--label LABEL`: task, arm,
 repeat, model, effort and versions, whether the check passed, seconds, tokens and
 cost as the agent's CLI reports them, and each command the agent ran.
 Each run's directory, with the project as the agent left it and its

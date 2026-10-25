@@ -2,14 +2,14 @@
 # Run the benchmark (bench/README.md): each task, with and without lisp,
 # REPEAT times, each run a fresh Claude Code session in a fresh copy of the
 # task's project, then the task's check.  One line per run goes to
-# bench/results/DATE-MODEL-EFFORT.jsonl; each run's directory, with its
+# bench/results/DATE-MODEL-EFFORT[-LABEL].jsonl; each run's directory, with its
 # transcript, to ~/.cache/slynk-cli-bench/, or BENCH_RUNS.
 #   bench/run.sh --model M --effort E [--repeat N] [--jobs J] [--arms A,B]
-#                [--limit S] [--tasks DIR] [TASK...]
+#                [--limit S] [--tasks DIR] [--label L] [TASK...]
 # Run inside `nix develop .#bench`.
 set -euo pipefail
 bench="$(cd "$(dirname "$0")" && pwd)"
-model="" effort="" repeat=5 jobs=4 arms="with,without" limit=1800 tasks_dir="$bench/tasks"
+model="" effort="" repeat=5 jobs=4 arms="with,without" limit=1800 tasks_dir="$bench/tasks" label=""
 tasks=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -20,6 +20,7 @@ while [ $# -gt 0 ]; do
     --arms) arms="$2"; shift 2 ;;
     --limit) limit="$2"; shift 2 ;;
     --tasks) tasks_dir="$(cd "$2" && pwd)"; shift 2 ;;
+    --label) label="-$2"; shift 2 ;;
     -*) echo "run.sh: unknown option $1" >&2; exit 2 ;;
     *) tasks+=("$1"); shift ;;
   esac
@@ -53,9 +54,9 @@ done
 stamp="$(date +%Y-%m-%d)"
 results="$bench/results"
 # Away from this repository, so an agent looking around finds no check.
-runs="${BENCH_RUNS:-$HOME/.cache/slynk-cli-bench}/$stamp-$model-$effort"
+runs="${BENCH_RUNS:-$HOME/.cache/slynk-cli-bench}/$stamp-$model-$effort$label"
 mkdir -p "$runs" "$results"
-record="$results/$stamp-$model-$effort.jsonl"
+record="$results/$stamp-$model-$effort$label.jsonl"
 claude_version="$(claude --version | head -1)"
 sbcl_version="$(sbcl --version)"
 tool_revision="$(git -C "$bench/.." rev-parse --short HEAD)$(git -C "$bench/.." diff --quiet || echo -dirty)"
