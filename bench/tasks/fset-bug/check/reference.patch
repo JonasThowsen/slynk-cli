@@ -1,0 +1,13 @@
+--- a/Code/order.lisp
++++ b/Code/order.lisp
+@@ -332,9 +332,7 @@
+        (default ':equal))
+       ((or (atom a) (atom b))
+        (let ((comp (funcall val-compare-fn a b)))
+-	 (if (or (eq comp ':less) (eq comp ':greater))
+-	     comp
+-	   default)))
++	 (if (eq comp ':equal) default comp)))
+     (when (eq a b)			; we could get lucky
+       (return default))
+     (let ((comp (funcall val-compare-fn (car a) (car b))))

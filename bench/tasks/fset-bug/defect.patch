@@ -1,0 +1,23 @@
+--- a/Code/order.lisp
++++ b/Code/order.lisp
+@@ -332,7 +332,9 @@
+        (default ':equal))
+       ((or (atom a) (atom b))
+        (let ((comp (funcall val-compare-fn a b)))
+-	 (if (eq comp ':equal) default comp)))
++	 (if (or (eq comp ':less) (eq comp ':greater))
++	     comp
++	   default)))
+     (when (eq a b)			; we could get lucky
+       (return default))
+     (let ((comp (funcall val-compare-fn (car a) (car b))))
+--- a/Code/testing.lisp
++++ b/Code/testing.lisp
+@@ -312,7 +312,6 @@
+       (test (less-than? "A" "B"))
+       (test (less-than? "x" "12"))
+       (test (equal? "This is a text." "This is a text."))
+-      (test (unequal? '(a . 3) '(a . 3.0))) ; #56
+       (test (less-than? (make-array '(1)
+ 				    :element-type 'base-char
+ 				    :initial-element #\A

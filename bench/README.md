@@ -57,6 +57,17 @@ The tasks are what Lisp work is, not built for the tool to win:
 | `feature` | a project of its own | add a small feature, checked by tests the agent does not see |
 | `question` | cl-ppcre | answer a question about the code in `ANSWER.md`, checked against the answer |
 
+### Hard tasks
+
+Real bugs that a library's maintainers fixed, put back into the version
+nixpkgs pins, with the regression test taken out; the report is the
+user's, rewritten so it does not point at the fix.
+
+| task | project | the work |
+|------|---------|----------|
+| `fset-bug` | FSet 2.2.0, a functional collections library | sets and maps merge distinct cons keys whose cdrs FSet cannot order; fix FSet's ordering, which lies under every collection (upstream 7a2cb81, https://github.com/slburson/fset/issues/56) |
+| `jzon-bug` | jzon 1.1.4, a JSON reader and writer | floats with no fractional part are written with shifted digits and a garbage character; fix the Schubfach float printer (upstream be8542e, https://github.com/Zulu-Inuoe/jzon/issues/45) |
+
 ## Running
 
 ```sh

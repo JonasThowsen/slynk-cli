@@ -30,7 +30,13 @@
 
       # The SBCL of the benchmark: what the tasks need, never a library a
       # task puts a defect into (bench/README.md).
-      benchLisp = pkgs: pkgs.sbcl.withPackages (ps: with ps; [ alexandria fiasco fiveam flexi-streams ]);
+      benchLisp = pkgs: pkgs.sbcl.withPackages (ps: with ps; [
+        alexandria fiasco fiveam flexi-streams
+        # fset-bug: FSet's dependencies; its tests are in FSet itself.
+        misc-extensions mt19937 named-readtables
+        # jzon-bug: jzon's dependencies; its tests use fiveam and alexandria.
+        closer-mop float-features trivial-gray-streams
+      ]);
     in
     {
       packages = forAllSystems (pkgs: { default = lisp pkgs; });
@@ -46,6 +52,8 @@
           BENCH_LISP = lisp pkgs;
           BENCH_SRC_CL_PPCRE = pkgs.sbclPackages.cl-ppcre.src;
           BENCH_SRC_LOCAL_TIME = pkgs.sbclPackages.local-time.src;
+          BENCH_SRC_FSET = pkgs.sbclPackages.fset.src;
+          BENCH_SRC_JZON = pkgs.sbclPackages.com_dot_inuoe_dot_jzon.src;
         };
       });
 
