@@ -32,9 +32,14 @@ EOF
 
 Each value comes back with a handle, `#@4 = #<INVOICE …>`, and `#@4` in a
 later form is that object. `*` is the last value, and an `in-package`
-stays for the next call, as at a REPL. A call waits ten seconds; a longer
-evaluation answers that it is still running and goes on, and `lisp wait N`
-takes it up again.
+stays for the next call, as at a REPL.
+
+A call waits ten seconds. For a form you expect to take longer, say so:
+`lisp eval --wait 300 '(build-index)'` returns as soon as it finishes or
+pauses, and at the latest after 300 seconds. An evaluation still running
+when the call returns goes on in the image; `lisp wait N --wait 300` takes
+it up again. One call with a long `--wait` does what a loop of short ones
+would, without the loop.
 
 `describe`, `apropos`, `macroexpand-1` and `trace` are forms like any
 other: `lisp eval '(macroexpand-1 (quote (define-rule …)))'`.
@@ -106,7 +111,10 @@ To pause a FiveAM test where it fails, let FiveAM call the debugger:
 
 - **Expensive state stays.** Data you loaded or built in the image is
   there for the next call; keep it in a variable, `(defvar *orders* …)`,
-  rather than building it again.
+  rather than building it again. The image holds everything you keep, so
+  let go of a large value you no longer need, `(setf *old-orders* nil)`,
+  before building another. If the image dies anyway, `lisp` says so and
+  shows the end of its output; `lisp start` starts a new one.
 - **Long output is cut.** An answer shows the last 200 lines and 16 KiB of
   the output and names the file with all of it, under `.slynk-cli/output/`.
   Read or search that file with your own tools.

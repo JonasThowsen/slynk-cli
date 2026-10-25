@@ -161,11 +161,30 @@ directory SLYNK_CLI_STATE names."
     (write-sequence octets stream)
     (finish-output stream)))
 
+(defun last-log-lines (count)
+  "The last COUNT lines of the image's output."
+  (let* ((lines (with-input-from-string (in (log-text))
+                  (loop for line = (read-line in nil) while line collect line))))
+    (last lines count)))
+
+(defun lost-image (condition)
+  "Fail because the connection broke while the image answered: say whether
+the image stopped, and with what."
+  ;; A process that lost its connections may take a moment to end.
+  (loop repeat 30 while (recorded-image) do (sleep 0.1))
+  (multiple-value-bind (port pid) (recorded-image)
+    (declare (ignore port))
+    (if pid
+        (fail "the connection to the image broke~@[: ~a~]" condition)
+        (fail "the image stopped while answering; the end of its output, in ~a:~%~{  ~a~%~}~
+               lisp start starts a new one."
+              (relative-name (state-file "image.log")) (last-log-lines 15)))))
+
 (defun receive-octets (stream count)
   (let* ((octets (make-array count :element-type '(unsigned-byte 8)))
          (read (read-sequence octets stream)))
     (when (< read count)
-      (fail "the image closed the connection"))
+      (lost-image nil))
     octets))
 
 (defun receive-message (stream)
@@ -184,7 +203,8 @@ directory SLYNK_CLI_STATE names."
                                   (let ((*print-readably* nil))
                                     (format nil "(:emacs-rex (slynk-cli:serve '~s) ~s t 1)"
                                             request "COMMON-LISP-USER"))))
-           (loop for message = (receive-message stream)
+           (loop for message = (handler-case (receive-message stream)
+                                 (stream-error (condition) (lost-image condition)))
                  ;; Slynk sends other messages too, such as indentation hints.
                  when (eql 0 (search "(:return " message))
                  do (let ((reply (with-standard-io-syntax

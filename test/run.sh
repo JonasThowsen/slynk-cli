@@ -286,8 +286,10 @@ file="$(grep -oE '[^ ]*output/[0-9]+\.txt' "$out")"
 run eval '(make-string 4998 :initial-element #\a)'
 expect 0 '\(3,000 characters left out\)'
 
-run stop
-expect 0 'stopped the image'
+# An image that ends while it answers, as one whose heap runs out does.
+run eval '(sb-ext:exit :abort t)'
+expect 1 'the image stopped while answering' 'image.log'
+refuse 'Backtrace' 'SIMPLE-STREAM-ERROR'
 run eval '(+ 1 2)'
 expect 1 'no image is running'
 
