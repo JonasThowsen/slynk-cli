@@ -25,9 +25,10 @@ The runs are independent of each other and of the person's setup, with
 the person's login. Claude Code runs with `--setting-sources project`,
 `--strict-mcp-config` and `--disable-slash-commands`: no user settings,
 plugins, MCP servers or skills. The runner refuses to start when global
-instructions (`~/.claude/CLAUDE.md`) or SBCL
-init files (`~/.sbclrc`, a sysinit) exist, so both arms and the check run
-SBCL without init files. Each run is in a fresh directory, and a run that
+instructions (`~/.claude/CLAUDE.md`) or the person's SBCL init files
+(`~/.sbclrc`, `/etc/sbclrc`) exist, so both arms and the check run SBCL
+without them; the SBCL's own sysinit, which only tells it where its
+sources are, is part of the SBCL. Each run is in a fresh directory, and a run that
 passes 30 minutes is stopped and counts as failed. Each task runs five
 times per arm, with Claude Code and Opus 5.5, at effort high and at
 medium.
@@ -67,4 +68,9 @@ bench/report.sh bench/results/*.jsonl > bench/results/REPORT.md
 Each run is one line of `results/DATE-MODEL-EFFORT.jsonl`: task, arm,
 repeat, model, effort and versions, whether the check passed, seconds, tokens and
 cost as the agent's CLI reports them, and each command the agent ran.
-The transcripts stay in `results/runs/`, which is not committed. `report.sh` sums them per task and arm.
+Each run's directory, with the project as the agent left it and its
+transcript, stays in `~/.cache/slynk-cli-bench/` (or `BENCH_RUNS`), away
+from this repository so an agent looking around finds no check; it is not
+committed. `report.sh` sums them per task and arm. A run where the agent never got
+to work, such as at a usage limit, is marked `error` and left out of the
+sums, and the report says how many there were.

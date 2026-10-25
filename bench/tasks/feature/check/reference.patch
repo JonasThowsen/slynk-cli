@@ -1,0 +1,375 @@
+diff --git a/src/holidays.lisp b/src/holidays.lisp
+new file mode 100644
+index 0000000..a3c6aab
+--- /dev/null
++++ b/src/holidays.lisp
+@@ -0,0 +1,25 @@
++(in-package #:timesheet)
++
++;;; Public holidays. Hours worked on one are paid at the holiday rate
++;;; (see PAY-RULES).
++
++(defclass holiday-calendar ()
++  ((holidays :initform (make-hash-table)
++             :reader holiday-table
++             :documentation "Holiday names by day number."))
++  (:documentation "The days that are public holidays, with their names."))
++
++(defun make-holiday-calendar ()
++  "Returns a calendar without holidays."
++  (make-instance 'holiday-calendar))
++
++(defun add-holiday (calendar date name)
++  "Makes DATE the holiday NAME in CALENDAR, replacing any name it had,
++and returns CALENDAR."
++  (setf (gethash (date-day-number date) (holiday-table calendar)) name)
++  calendar)
++
++(defun holiday-name (calendar date)
++  "Returns the name of the holiday on DATE in CALENDAR, or NIL if DATE
++is not one."
++  (values (gethash (date-day-number date) (holiday-table calendar))))
+diff --git a/src/package.lisp b/src/package.lisp
+index 494cc8d..d793981 100644
+--- a/src/package.lisp
++++ b/src/package.lisp
+@@ -43,6 +43,11 @@
+    #:parse-hours
+    #:parse-entry-line
+    #:load-entries
++   ;; Holidays
++   #:holiday-calendar
++   #:make-holiday-calendar
++   #:add-holiday
++   #:holiday-name
+    ;; Rules
+    #:pay-rules
+    #:make-pay-rules
+@@ -50,12 +55,15 @@
+    #:daily-threshold
+    #:overtime-multiplier
+    #:periods-per-year
++   #:holidays
++   #:holiday-multiplier
+    ;; Payroll
+    #:pay-line
+    #:pay-line-employee-id
+    #:pay-line-name
+    #:pay-line-regular-hours
+    #:pay-line-overtime-hours
++   #:pay-line-holiday-hours
+    #:pay-line-gross
+    #:split-hours
+    #:compute-pay
+diff --git a/src/payroll.lisp b/src/payroll.lisp
+index 1d0a990..a2ae1ad 100644
+--- a/src/payroll.lisp
++++ b/src/payroll.lisp
+@@ -9,6 +9,7 @@
+   (name "" :type string)
+   (regular-hours 0 :type rational)
+   (overtime-hours 0 :type rational)
++  (holiday-hours 0 :type rational)
+   (gross 0 :type integer))
+ 
+ (defun hours-by-day (entries)
+@@ -68,14 +69,24 @@ are overtime too; the daily overtime does not count towards it."
+ ENTRIES, the employee's entries of the period, cover, under RULES."))
+ 
+ (defmethod compute-pay ((employee hourly-employee) entries rules)
+-  (multiple-value-bind (regular overtime) (split-hours entries rules)
+-    (let ((rate (hourly-rate employee)))
+-      (make-pay-line :employee-id (employee-id employee)
+-                     :name (employee-name employee)
+-                     :regular-hours regular
+-                     :overtime-hours overtime
+-                     :gross (round (+ (* regular rate)
+-                                      (* overtime rate (overtime-multiplier rules))))))))
++  ;; Hours on a holiday are paid at the holiday rate and count towards
++  ;; neither threshold.
++  (let ((holiday-hours (total-hours (remove-if-not (lambda (entry)
++                                                     (holiday-entry-p entry rules))
++                                                   entries))))
++    (multiple-value-bind (regular overtime)
++        (split-hours (remove-if (lambda (entry) (holiday-entry-p entry rules))
++                                entries)
++                     rules)
++      (let ((rate (hourly-rate employee)))
++        (make-pay-line :employee-id (employee-id employee)
++                       :name (employee-name employee)
++                       :regular-hours regular
++                       :overtime-hours overtime
++                       :holiday-hours holiday-hours
++                       :gross (round (+ (* regular rate)
++                                        (* overtime rate (overtime-multiplier rules))
++                                        (* holiday-hours rate (holiday-multiplier rules)))))))))
+ 
+ (defmethod compute-pay ((employee contractor) entries rules)
+   (declare (ignore rules))
+@@ -106,7 +117,8 @@ from START to END, both inclusive, ordered by employee id."
+ 
+ (defun payroll-totals (pay-lines)
+   "Returns the sums over PAY-LINES as a property list with the keys
+-:REGULAR-HOURS, :OVERTIME-HOURS and :GROSS."
++:REGULAR-HOURS, :OVERTIME-HOURS, :HOLIDAY-HOURS and :GROSS."
+   (list :regular-hours (reduce #'+ pay-lines :key #'pay-line-regular-hours)
+         :overtime-hours (reduce #'+ pay-lines :key #'pay-line-overtime-hours)
++        :holiday-hours (reduce #'+ pay-lines :key #'pay-line-holiday-hours)
+         :gross (reduce #'+ pay-lines :key #'pay-line-gross)))
+diff --git a/src/report.lisp b/src/report.lisp
+index 6ea5624..ed61b7a 100644
+--- a/src/report.lisp
++++ b/src/report.lisp
+@@ -14,21 +14,23 @@
+ (defun write-payroll-report (pay-lines &optional (stream *standard-output*))
+   "Writes PAY-LINES to STREAM as a table, one employee to a line, with
+ a line of totals at the end."
+-  (let ((row "~&~8A ~20A ~9@A ~9@A ~11@A~%"))
+-    (format stream row "Id" "Name" "Regular" "Overtime" "Gross")
++  (let ((row "~&~8A ~20A ~9@A ~9@A ~9@A ~11@A~%"))
++    (format stream row "Id" "Name" "Regular" "Overtime" "Holiday" "Gross")
+     (dolist (line pay-lines)
+       (format stream row
+               (pay-line-employee-id line)
+               (pay-line-name line)
+               (format-hours (pay-line-regular-hours line))
+               (format-hours (pay-line-overtime-hours line))
++              (format-hours (pay-line-holiday-hours line))
+               (format-money (pay-line-gross line))))
+-    (destructuring-bind (&key regular-hours overtime-hours gross)
++    (destructuring-bind (&key regular-hours overtime-hours holiday-hours gross)
+         (payroll-totals pay-lines)
+       (format stream row
+               "" "Total"
+               (format-hours regular-hours)
+               (format-hours overtime-hours)
++              (format-hours holiday-hours)
+               (format-money gross)))))
+ 
+ (defun project-hours (timesheet start end)
+diff --git a/src/rules.lisp b/src/rules.lisp
+index 98b96ba..b67bab1 100644
+--- a/src/rules.lisp
++++ b/src/rules.lisp
+@@ -19,24 +19,44 @@ are paid overtime, or NIL for no daily limit.")
+    (periods-per-year :initarg :periods-per-year
+                      :reader periods-per-year
+                      :documentation "Pay periods in a year: a salaried employee
+-is paid this fraction of the annual salary per run."))
++is paid this fraction of the annual salary per run.")
++   (holidays :initarg :holidays
++             :reader holidays
++             :documentation "The HOLIDAY-CALENDAR of public holidays, or NIL
++for none.")
++   (holiday-multiplier :initarg :holiday-multiplier
++                       :reader holiday-multiplier
++                       :documentation "Pay for hours on a holiday as a multiple
++of the hourly rate."))
+   (:documentation "How hours turn into pay."))
+ 
+ (defun make-pay-rules (&key (weekly-threshold 40)
+                             (daily-threshold nil)
+                             (overtime-multiplier 3/2)
+-                            (periods-per-year 12))
++                            (periods-per-year 12)
++                            (holidays nil)
++                            (holiday-multiplier 2))
+   "Returns pay rules. The defaults are a 40-hour week, no daily limit,
+-time and a half for overtime and monthly pay."
++time and a half for overtime, monthly pay, and no holidays, with double
++pay on a holiday when there are."
+   (check-type weekly-threshold (rational 0))
+   (check-type daily-threshold (or null (rational 0 24)))
+   (check-type overtime-multiplier (rational 1))
+   (check-type periods-per-year (integer 1))
++  (check-type holidays (or null holiday-calendar))
++  (check-type holiday-multiplier (rational 1))
+   (make-instance 'pay-rules
+                  :weekly-threshold weekly-threshold
+                  :daily-threshold daily-threshold
+                  :overtime-multiplier overtime-multiplier
+-                 :periods-per-year periods-per-year))
++                 :periods-per-year periods-per-year
++                 :holidays holidays
++                 :holiday-multiplier holiday-multiplier))
++
++(defun holiday-entry-p (entry rules)
++  "Returns true if ENTRY's date is a holiday under RULES."
++  (let ((calendar (holidays rules)))
++    (and calendar (holiday-name calendar (entry-date entry)) t)))
+ 
+ (defmethod print-object ((rules pay-rules) stream)
+   (print-unreadable-object (rules stream :type t)
+diff --git a/tests/holidays.lisp b/tests/holidays.lisp
+new file mode 100644
+index 0000000..a63bdbc
+--- /dev/null
++++ b/tests/holidays.lisp
+@@ -0,0 +1,115 @@
++(in-package #:timesheet/tests)
++
++(def-suite* holidays :in timesheet)
++
++(defun easter-calendar ()
++  "Easter 2026: Maundy Thursday and Good Friday, 2 and 3 April."
++  (let ((calendar (make-holiday-calendar)))
++    (add-holiday calendar (d "2026-04-02") "Skjærtorsdag")
++    (add-holiday calendar (d "2026-04-03") "Langfredag")
++    calendar))
++
++(test holiday-calendar
++  (let ((calendar (make-holiday-calendar)))
++    (is (null (holiday-name calendar (d "2026-05-17"))))
++    (is (eq calendar (add-holiday calendar (d "2026-05-17") "Nasjonaldag")))
++    (is (string= "Nasjonaldag" (holiday-name calendar (d "2026-05-17"))))
++    (add-holiday calendar (d "2026-05-17") "Grunnlovsdag")
++    (is (string= "Grunnlovsdag" (holiday-name calendar (d "2026-05-17"))))
++    (is (null (holiday-name calendar (d "2026-05-18"))))))
++
++(test holiday-rules-defaults
++  (let ((rules (make-pay-rules)))
++    (is (null (holidays rules)))
++    (is (= 2 (holiday-multiplier rules)))))
++
++(test holiday-hours-are-paid-apart
++  ;; Monday to Wednesday 10 hours, Good Friday 10: 30 regular hours,
++  ;; 10 holiday hours at double pay.
++  (let ((line (compute-pay (hourly "alice" "Alice Berg" 2000)
++                           (alice-entries "2026-03-30,alice,10,apollo"
++                                          "2026-03-31,alice,10,apollo"
++                                          "2026-04-01,alice,10,apollo"
++                                          "2026-04-03,alice,10,apollo")
++                           (make-pay-rules :holidays (easter-calendar)))))
++    (is (= 30 (pay-line-regular-hours line)))
++    (is (= 0 (pay-line-overtime-hours line)))
++    (is (= 10 (pay-line-holiday-hours line)))
++    (is (= 100000 (pay-line-gross line)))))
++
++(test holiday-hours-do-not-count-towards-the-week
++  ;; 44 hours from Monday to Wednesday and 8 on Maundy Thursday: the
++  ;; 4 hours above 40 are overtime, the holiday hours are not.
++  (let ((line (compute-pay (hourly "alice" "Alice Berg" 2000)
++                           (alice-entries "2026-03-30,alice,15,apollo"
++                                          "2026-03-31,alice,15,apollo"
++                                          "2026-04-01,alice,14,apollo"
++                                          "2026-04-02,alice,8,apollo")
++                           (make-pay-rules :holidays (easter-calendar)))))
++    (is (= 40 (pay-line-regular-hours line)))
++    (is (= 4 (pay-line-overtime-hours line)))
++    (is (= 8 (pay-line-holiday-hours line)))
++    (is (= 124000 (pay-line-gross line)))))
++
++(test holiday-hours-and-the-daily-threshold
++  ;; 10 hours on a Monday and 10 on Good Friday with an 8-hour day
++  ;; and pay and a half on holidays.
++  (let ((line (compute-pay (hourly "alice" "Alice Berg" 2000)
++                           (alice-entries "2026-03-30,alice,10,apollo"
++                                          "2026-04-03,alice,6,apollo"
++                                          "2026-04-03,alice,4,zeus")
++                           (make-pay-rules :daily-threshold 8
++                                           :holidays (easter-calendar)
++                                           :holiday-multiplier 5/2))))
++    (is (= 8 (pay-line-regular-hours line)))
++    (is (= 2 (pay-line-overtime-hours line)))
++    (is (= 10 (pay-line-holiday-hours line)))
++    (is (= 72000 (pay-line-gross line)))))
++
++(test holidays-leave-others-alone
++  (let ((rules (make-pay-rules :holidays (easter-calendar)))
++        (timesheet (sheet "2026-04-03,carl,8,apollo"
++                          "2026-04-03,sara,8,apollo")))
++    (let ((line (compute-pay (make-instance 'contractor :id "carl" :name "Carl Dahl"
++                                                        :hourly-rate 5000)
++                             (employee-entries timesheet "carl")
++                             rules)))
++      (is (= 8 (pay-line-regular-hours line)))
++      (is (= 0 (pay-line-holiday-hours line)))
++      (is (= 40000 (pay-line-gross line))))
++    (let ((line (compute-pay (make-instance 'salaried-employee :id "sara" :name "Sara Lie"
++                                                               :annual-salary 6000000)
++                             (employee-entries timesheet "sara")
++                             rules)))
++      (is (= 8 (pay-line-regular-hours line)))
++      (is (= 0 (pay-line-holiday-hours line)))
++      (is (= 500000 (pay-line-gross line))))))
++
++(test no-holidays-no-holiday-hours
++  (let ((line (compute-pay (hourly "alice" "Alice Berg" 2000)
++                           (alice-entries "2026-04-03,alice,8,apollo")
++                           (make-pay-rules))))
++    (is (= 8 (pay-line-regular-hours line)))
++    (is (= 0 (pay-line-holiday-hours line)))
++    (is (= 16000 (pay-line-gross line)))))
++
++(test holiday-payroll
++  (let* ((roster (make-roster (hourly "alice" "Alice Berg" 2000)
++                              (hourly "bob" "Bob Moe" 3000)))
++         (timesheet (sheet "2026-04-01,alice,8,apollo"
++                           "2026-04-02,alice,8,apollo"
++                           "2026-04-03,bob,4,zeus"))
++         (lines (run-payroll roster timesheet (d "2026-04-01") (d "2026-04-30")
++                             :rules (make-pay-rules :holidays (easter-calendar)))))
++    (is (equal '(8 4) (mapcar #'pay-line-holiday-hours lines)))
++    (is (equal '(48000 24000) (mapcar #'pay-line-gross lines)))
++    (is (equal '(:regular-hours 8 :overtime-hours 0 :holiday-hours 12 :gross 72000)
++               (payroll-totals lines)))
++    (is (string= (format nil "~
++Id       Name                   Regular  Overtime   Holiday       Gross
++alice    Alice Berg                8.00      0.00      8.00      480.00
++bob      Bob Moe                   0.00      0.00      4.00      240.00
++         Total                     8.00      0.00     12.00      720.00
++")
++                 (with-output-to-string (out)
++                   (write-payroll-report lines out))))))
+diff --git a/tests/payroll.lisp b/tests/payroll.lisp
+index f7d3d82..75b96cd 100644
+--- a/tests/payroll.lisp
++++ b/tests/payroll.lisp
+@@ -108,7 +108,7 @@
+          (lines (run-payroll roster timesheet (d "2026-03-01") (d "2026-03-31"))))
+     (is (equal '("alice" "bob") (mapcar #'pay-line-employee-id lines)))
+     (is (equal '(16000 12000) (mapcar #'pay-line-gross lines)))
+-    (is (equal '(:regular-hours 12 :overtime-hours 0 :gross 28000)
++    (is (equal '(:regular-hours 12 :overtime-hours 0 :holiday-hours 0 :gross 28000)
+                (payroll-totals lines)))
+     (signals error (run-payroll roster timesheet (d "2026-03-31") (d "2026-03-01")))))
+ 
+diff --git a/tests/report.lisp b/tests/report.lisp
+index 128d0fc..efeedd8 100644
+--- a/tests/report.lisp
++++ b/tests/report.lisp
+@@ -24,10 +24,10 @@
+                     (run-payroll roster timesheet (d "2026-03-01") (d "2026-03-31"))
+                     out))))
+     (is (string= (format nil "~
+-Id       Name                   Regular  Overtime       Gross
+-alice    Alice Berg                8.00      0.00      160.00
+-carl     Carl Dahl                 2.50      0.00      125.00
+-         Total                    10.50      0.00      285.00
++Id       Name                   Regular  Overtime   Holiday       Gross
++alice    Alice Berg                8.00      0.00      0.00      160.00
++carl     Carl Dahl                 2.50      0.00      0.00      125.00
++         Total                    10.50      0.00      0.00      285.00
+ ")
+                  report))))
+ 
+diff --git a/timesheet.asd b/timesheet.asd
+index 5fc3218..2d34adf 100644
+--- a/timesheet.asd
++++ b/timesheet.asd
+@@ -9,6 +9,7 @@
+                              (:file "dates")
+                              (:file "employees")
+                              (:file "entries")
++                             (:file "holidays")
+                              (:file "rules")
+                              (:file "payroll")
+                              (:file "report"))))
+@@ -24,6 +25,7 @@
+                              (:file "dates")
+                              (:file "entries")
+                              (:file "payroll")
++                             (:file "holidays")
+                              (:file "report"))))
+   :perform (test-op (o c)
+              (unless (uiop:symbol-call :fiveam :run!

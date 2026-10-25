@@ -1,0 +1,28 @@
+--- a/closures.lisp
++++ b/closures.lisp
+@@ -107,16 +107,20 @@
+         ;; here comes the actual closure for REGISTER
+         (lambda (start-pos)
+           (declare (fixnum start-pos))
+-          ;; remember the old value of *REGS-MAYBE-START* in case we
+-          ;; cannot match
+-          (let ((old-*regs-maybe-start* (svref *regs-maybe-start* num)))
++          ;; remember the old values of *REGS-START* and friends in
++          ;; case we cannot match
++          (let ((old-*reg-starts* (svref *reg-starts* num))
++                (old-*regs-maybe-start* (svref *regs-maybe-start* num))
++                (old-*reg-ends* (svref *reg-ends* num)))
+             ;; we cannot use *REGS-START* here because Perl allows
+             ;; regular expressions like /(a|\1x)*/
+             (setf (svref *regs-maybe-start* num) start-pos)
+             (let ((next-pos (funcall inner-matcher start-pos)))
+               (unless next-pos
+-                ;; restore the old value on failure
+-                (setf (svref *regs-maybe-start* num) old-*regs-maybe-start*))
++                ;; restore old values on failure
++                (setf (svref *reg-starts* num) old-*reg-starts*
++                      (svref *regs-maybe-start* num) old-*regs-maybe-start*
++                      (svref *reg-ends* num) old-*reg-ends*))
+               next-pos)))))))
+ 
+ (defmethod create-matcher-aux ((lookahead lookahead) next-fn)

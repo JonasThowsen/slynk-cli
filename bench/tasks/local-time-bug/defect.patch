@@ -1,0 +1,21 @@
+--- a/src/local-time.lisp
++++ b/src/local-time.lisp
+@@ -1337,7 +1337,7 @@
+   (let ((remaining-days days))
+     (multiple-value-bind (400-years remaining-days)
+         (floor remaining-days #.(years-to-days 400))
+-      (let* ((100-years (min (floor remaining-days #.(years-to-days 100)) 3))
++      (let* ((100-years (floor remaining-days #.(years-to-days 100)))
+              (remaining-days (- remaining-days
+                                 (* 100-years #.(years-to-days 100)))))
+         (multiple-value-bind (4-years remaining-days)
+@@ -1352,8 +1352,7 @@
+   #+nil
+   (bind ((remaining-days days)
+          ((values 400-years remaining-days) (floor remaining-days #.(years-to-days 400)))
+-         (100-years (min (floor remaining-days #.(years-to-days 100))
+-                         3))
++         (100-years (floor remaining-days #.(years-to-days 100)))
+          (remaining-days (- remaining-days
+                             (* 100-years
+                                #.(years-to-days 100))))

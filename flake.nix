@@ -41,7 +41,7 @@
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
         };
         bench = pkgs.mkShell {
-          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq ];
+          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux ];
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
           BENCH_LISP = lisp pkgs;
           BENCH_SRC_CL_PPCRE = pkgs.sbclPackages.cl-ppcre.src;

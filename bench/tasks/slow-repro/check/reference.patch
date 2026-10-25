@@ -1,0 +1,16 @@
+--- a/src/queries.lisp
++++ b/src/queries.lisp
+@@ -12,9 +12,10 @@
+ day by day."
+   (let ((from (parse-date from))
+         (to (parse-date to)))
+-    (apply #'append
+-           (loop for day from from to to
+-                 collect (day-sales database store day)))))
++    ;; A fresh list: the day lists belong to the database, and callers
++    ;; such as LARGEST-SALES sort the result in place.
++    (loop for day from from to to
++          nconc (copy-list (day-sales database store day)))))
+ 
+ (defun total-amount (sales)
+   "Returns the sum of the amounts of SALES."
