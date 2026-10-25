@@ -1,0 +1,50 @@
+--- a/src/index/index.lisp
++++ b/src/index/index.lisp
+@@ -170,8 +170,9 @@
+ 
+ (defun merge-group (index group)
+   "Replaces the segments GROUP of INDEX by their merge, which takes the
+-place of the oldest of them, and moves their documents' ids."
+-  (with-slots (segments ids) index
++place of the oldest of them, and moves their documents' ids and the
++deletions waiting for them."
++  (with-slots (segments ids pending-deletes) index
+     (multiple-value-bind (merged maps) (merge-segments group (next-segment-number index))
+       (setf segments
+             (loop for segment in segments
+@@ -190,7 +191,18 @@
+                        (when (and location
+                                   (eq (car location) segment)
+                                   (= (cdr location) number))
+-                         (setf (gethash id ids) (cons merged new)))))))))))
++                         (setf (gethash id ids) (cons merged new))))))))
++      ;; A deletion waiting for the commit goes with the document it
++      ;; deletes; one whose document was deleted already is done.
++      (setf pending-deletes
++            (loop for pending in pending-deletes
++                  for (nil segment-number . number) = pending
++                  for position = (position segment-number group :key #'segment-number)
++                  for new = (and position (aref (nth position maps) number))
++                  if (null position)
++                    collect pending
++                  else if (>= new 0)
++                         collect (list* (first pending) (segment-number merged) new))))))
+ 
+ (defun merge-as-needed (index)
+   "Merges segments of INDEX as long as some level has MERGE-FACTOR."
+@@ -217,14 +229,8 @@
+   (with-slots (pending-deletes segments ids) index
+     (dolist (pending (reverse pending-deletes))
+       (destructuring-bind (id segment-number . number) pending
++        ;; A merge moves the deletions of the documents it moves.
+         (let ((segment (find segment-number segments :key #'segment-number)))
+-          (unless segment
+-            ;; The segment was merged away since the deletion, after a
+-            ;; flush of a full buffer: its live documents moved, and the
+-            ;; id table says where this one went.
+-            (alexandria:when-let ((location (gethash id ids)))
+-              (setf segment (car location)
+-                    number (cdr location))))
+           (when segment
+             (delete-from-segment segment number)
+             ;; The id goes with the document it names; after an update it

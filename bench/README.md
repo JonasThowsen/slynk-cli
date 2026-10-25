@@ -57,6 +57,17 @@ The tasks are what Lisp work is, not built for the tool to win:
 | `feature` | a project of its own | add a small feature, checked by tests the agent does not see |
 | `question` | cl-ppcre | answer a question about the code in `ANSWER.md`, checked against the answer |
 
+### Hard tasks
+
+Projects of their own of about 2000 lines each, in several packages and
+with their own tests, for work that takes a strong agent minutes rather
+than seconds:
+
+| task | project | the work |
+|------|---------|----------|
+| `deep-bug` | a dependency resolver and a registry snapshot | the resolver fails on a package whose constraint plainly allows a release, and the cause is layers away from the error |
+| `stateful-bug` | a full-text search index and a sample archive that takes about a minute to build | an update is lost after a particular sequence of operations on the full archive, which a small index does not show |
+
 ## Running
 
 ```sh
