@@ -30,7 +30,7 @@
 
       # The SBCL of the benchmark: what the tasks need, never a library a
       # task puts a defect into (bench/README.md).
-      benchLisp = pkgs: pkgs.sbcl.withPackages (ps: with ps; [ alexandria fiasco fiveam flexi-streams ]);
+      benchLisp = pkgs: pkgs.sbcl.withPackages (ps: with ps; [ alexandria fiasco fiveam flexi-streams salza2 ]);
     in
     {
       packages = forAllSystems (pkgs: { default = lisp pkgs; });
@@ -41,11 +41,14 @@
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
         };
         bench = pkgs.mkShell {
-          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux ];
+          # gzip and bzip2 for chipz-bug: its report uses gzip, its tests bzip2.
+          packages = [ (benchLisp pkgs) pkgs.git pkgs.jq pkgs.util-linux pkgs.gzip pkgs.bzip2 ];
           SLYNK_CLI_SLYNK = slynkDirectory pkgs;
           BENCH_LISP = lisp pkgs;
           BENCH_SRC_CL_PPCRE = pkgs.sbclPackages.cl-ppcre.src;
           BENCH_SRC_LOCAL_TIME = pkgs.sbclPackages.local-time.src;
+          BENCH_SRC_CHIPZ = pkgs.sbclPackages.chipz.src;
+          BENCH_SRC_CL_JSON = pkgs.sbclPackages.cl-json.src;
         };
       });
 

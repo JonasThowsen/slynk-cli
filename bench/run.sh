@@ -38,9 +38,10 @@ command -v claude >/dev/null || refuse "claude is not on PATH"
 # The SBCL's own sysinit, which maps SYS: to its sources, is part of it.
 [ ! -e /etc/sbclrc ] || refuse "/etc/sbclrc would reach every run; move it away first"
 sbcl --noinform --non-interactive --no-userinit --no-sysinit --eval '(require "asdf")' \
-  --eval '(when (or (asdf:find-system "cl-ppcre" nil) (asdf:find-system "local-time" nil))
+  --eval '(when (some (lambda (name) (asdf:find-system name nil))
+                      (list "cl-ppcre" "local-time" "chipz" "cl-json"))
             (sb-ext:exit :code 1))' >/dev/null 2>&1 \
-  || refuse "the bench SBCL can load cl-ppcre or local-time; a task's copy must be the only one"
+  || refuse "the bench SBCL can load a library a task puts a defect into (cl-ppcre, local-time, chipz, cl-json); a task's copy must be the only one"
 
 # PATH without any lisp command, for the arm without it.
 plain_path=""
