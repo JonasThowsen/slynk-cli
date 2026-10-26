@@ -512,10 +512,21 @@ wait for them.  An error there pauses the evaluation in the main thread."
 
 ;;; Paused: the debugger of an evaluation's thread.
 
+(defvar *pausing* nil
+  "Whether this thread is in PAUSE already.")
+
 (defun pause (condition hook)
   "The debugger of an evaluation's thread: wait in it, serving commands."
   (declare (ignore hook))
-  (let ((evaluation *evaluation*))
+  ;; SBCL counts errors signalled within the handling of others and, past
+  ;; *MAXIMUM-ERROR-DEPTH*, sends any further one, even one that is handled,
+  ;; to its own debugger with the hooks off, which in a thread other than
+  ;; the main one waits for ever. So an error nested a dozen times deep, as
+  ;; a handler that signals again, would leave nothing working in its
+  ;; pause. The pause counts afresh; one within it counts on.
+  (let ((evaluation *evaluation*)
+        (sb-kernel::*current-error-depth* (if *pausing* sb-kernel::*current-error-depth* 0))
+        (*pausing* t))
     (slynk-backend:call-with-debugging-environment
      (lambda ()
        (setf (evaluation-condition evaluation) condition

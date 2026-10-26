@@ -307,6 +307,16 @@ restart="$(grep -oE '^ +[0-9]+  abort +abort thread' "$out" | grep -oE '^ +[0-9]
 run restart "$worker" "$restart"
 expect 0 "evaluation $worker went on"
 
+# Errors nested past SBCL's maximum depth, as a handler that signals
+# again: the evaluation pauses as any other, and its frames answer.
+run eval '(labels ((nest (n) (handler-bind ((error (lambda (c) (declare (ignore c)) (when (> n 0) (nest (1- n)))))) (error "at ~d" n)))) (nest 12))'
+expect 1 'is paused in the debugger' 'Maximum error nesting depth exceeded'
+id="$(number_after 'evaluation ')"
+run frame "$id" 0
+expect 0 "frame 0 of evaluation $id" 'n  #@[0-9]+ = 1'
+run abort "$id"
+expect 0 "evaluation $id was aborted"
+
 # Long output and long values are cut.
 run eval '(loop repeat 1000 do (print (make-string 30 :initial-element #\x)))'
 expect 0 'the last [0-9,]+ of 34,000 characters \(1,000 lines\); all of it in .*output/[0-9]+\.txt'
