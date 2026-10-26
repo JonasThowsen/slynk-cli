@@ -249,11 +249,13 @@ an editor.
 
 ## Does it help?
 
-Not on the tasks measured so far. On seven tasks in Common Lisp projects
-(bugs reported in cl-ppcre and local-time, a failing test, a bug behind a
-slow setup, a macro bug, a small feature, a question about cl-ppcre's
-code), Claude Code with Opus 5.5 passed every task in both arms, at effort
-high and at medium: 140 runs, 2026-10-25.
+Not on the tasks measured so far. Claude Code with Opus 5.5 passed every
+task in both arms, and with `lisp` it took longer and cost more.
+
+**Seven everyday tasks** (bugs reported in cl-ppcre and local-time, a
+failing test, a bug behind a slow setup, a macro bug, a small feature, a
+question about cl-ppcre's code), at effort high and medium: 140 runs,
+2026-10-25, on 2de39a7.
 
 | effort | arm | passed | median time | median cost | median tokens |
 |--------|-----|--------|-------------|-------------|---------------|
@@ -262,42 +264,54 @@ high and at medium: 140 runs, 2026-10-25.
 | medium | with `lisp` | 35/35 | 59 s | $0.28 | 303k |
 | medium | without | 35/35 | 48 s | $0.25 | 235k |
 
-With `lisp` the runs took longer and cost more; with five runs per task
-and arm, the differences per task are within noise, but they point the
-same way in both effort levels. Most tokens (92%) are cache reads, so cost
-is the better measure.
+**Eight hard tasks**, built so that reading is not enough: four real bugs
+that the maintainers of FSet, jzon, chipz and cl-json fixed, put back; a
+dependency resolver whose error shows layers away from its cause; a
+search index whose bug shows only after a 45-second build; a threaded job
+server whose worker fails on state another operation broke; and a report
+to make four times faster. At effort high: 80 runs, 2026-10-26, on
+89464ad, with the ten `cl-json-bug` runs done again on 75c553f (below).
+
+| arm | passed | median time | median cost | median tokens |
+|-----|--------|-------------|-------------|---------------|
+| with `lisp` | 40/40 | 175 s | $0.61 | 660k |
+| without | 40/40 | 151 s | $0.49 | 428k |
+
+Per task, with five runs per arm, most differences are within noise; they
+point the same way except in two. `deep-bug` took 343 s with `lisp`
+against 966 s without, but the long runs in both arms were waiting for a
+brute-force checker the agent wrote to compare the resolver against,
+three of five without and one of five with, so the difference is in how
+the runs checked their fix more than in how they found the bug.
+`slow-report` took 234 s against 277 s, within noise.
 
 What the runs with `lisp` did:
 
-- Not every agent used it: 27 of 35 runs at high called `lisp` at all, 13
-  of 35 at medium. Those that never called it were as slow and as costly
-  as those that did (high: 83 s and $0.47 against 87 s and $0.35; medium:
-  60 s and $0.26 against 59 s and $0.29), so the difference to the runs
-  without comes at least as much from reading the guide (69 of 70 runs)
-  and the line pointing to it as from using the tool.
-- Those that used it used it as a REPL that stays up. Over the 70 runs:
-  `eval` 139 times, `start` 56, `stop` 42, `wait` 25, `compile` 19,
-  `abort` 14, `status` 9, `definition` 2, and never `frame`, `backtrace`,
-  `restart-frame`, `xref` or `inspect`.
-- An evaluation paused in the debugger in 12 runs (`question`,
-  `slow-repro`, `local-time-bug`), and each time the agent aborted it or
-  evaluated again rather than looking at the frames. Some of those pauses
-  came from the tool itself: `lisp start` in cl-ppcre, which has two
-  `.asd` files at the top, loads no system, and the agent's next form
-  failed.
-- `slow-repro`, the one bug that shows only after a slow setup, had the
-  largest difference: 134 s and $0.37 with `lisp` against 82 s and $0.21
-  without at high, 87 s against 62 s at medium. The agents without it
-  found the bug by reading; those with it often built the data in the
-  image first.
+- Almost all used it (38 of 40 hard runs), as a REPL that stays up: `eval`
+  229 times, `compile` 61, `start` 39, `stop` 37, `abort` 31. The
+  debugger hardly, in 5 of the 40 runs: `eval --in` 5 times (most in
+  `chipz-bug`, looking at the inflater's state where it failed), `frame`
+  2, `backtrace` 2, `restart` 1, and never `restart-frame` or `return`.
+  In the everyday tasks, never `frame`, `backtrace` or `restart-frame` at
+  all.
+- The extra cost comes at least as much from reading the guide and the
+  line pointing to it as from using the tool: in the everyday tasks, the
+  runs with `lisp` that never called it were as slow and as costly as
+  those that did.
+- The hard tasks found a bug of the tool: an error nested past SBCL's
+  maximum error depth, which is `cl-json-bug`'s bug, left `lisp eval`
+  without an answer, in every run with it (328 s against 134 s). With it
+  fixed (75c553f), the task took 148 s with `lisp` against 103 s without.
 
-So on tasks a capable agent solves by reading, `lisp` and its guide cost
-time and money and buy nothing. Whether they help where reading is not
-enough, in a code base too large to read or with bugs found only by
-running, is the next thing to measure. The runs measured the tool as of 2de39a7;
-later changes, such as the main thread, are not measured. The sums per
-task and arm are in
-`bench/results/REPORT.md`, and every run, with its commands, in
+So on these tasks a capable agent finds the bug by reading and by running
+small scripts, and `lisp` and its guide cost about a sixth more time and a
+quarter more money for nothing it would not have found anyway. The agents
+do not reach for the debugger even where it has something to show. What
+remains unmeasured is work over hours rather than minutes, in a code base
+too large to read, and live work on a running program, such as a
+compositor's main loop (`eval --main`), which a fresh process cannot do at
+all. The sums per task and arm are in `bench/results/REPORT.md` and
+`bench/results/REPORT-hard.md`, and every run, with its commands, in
 `bench/results/*.jsonl`.
 
 ## Development
