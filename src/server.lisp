@@ -1087,7 +1087,15 @@ TEXT's forms."
 
 (defun answer-return (id frame text wait)
   (let ((evaluation (evaluation-for id)))
-    (ask evaluation (lambda () (check-frame evaluation frame)))
+    ;; Slynk answers a frame it cannot return from with a string rather
+    ;; than an error, and the evaluation would stay paused without a word.
+    (ask evaluation (lambda ()
+                      (check-frame evaluation frame)
+                      (unless (slynk-backend:frame-restartable-p
+                               (first (slynk-backend:compute-backtrace frame (1+ frame))))
+                        (error "Frame ~d cannot return; it was compiled without (debug 2)? ~
+                                Return from a frame of the project's code, or use a restart."
+                               frame))))
     (let ((forms (read-forms-text text)))
       (resume evaluation (lambda () (slynk-backend:return-from-frame frame `(progn ,@forms)))))
     (describe-evaluation evaluation wait)))

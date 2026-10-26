@@ -187,7 +187,9 @@ A paused evaluation stays paused until a command resumes or aborts it:
 - `restart N R [FORM...]` invokes restart R with the FORMs' values as
   its arguments, as `use-value 42` needs. `restart-frame N F` runs frame
   F again from its start, so a function redefined since runs in its new
-  form. `return N F FORM` returns FORM's values from frame F. Each then
+  form. `return N F FORM` returns FORM's values from frame F. Both need
+  a frame compiled with `(debug 2)` or more, such as the project's code,
+  and say so of any other. Each then
   answers as `eval` does: the evaluation has finished, paused again, or
   is still running.
 - `backtrace N` lists C frames, 20 by default, from frame K, 0 by

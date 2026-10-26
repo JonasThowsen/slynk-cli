@@ -118,7 +118,8 @@ names the function that hands work to that loop with
   refuses. Go on with a restart the code offers, such as the loop's
   `continue` (`lisp restart N R`), with `lisp return N F FORM` from the
   frame that failed, or, after fixing and compiling the function, with
-  `lisp restart-frame N F`.
+  `lisp restart-frame N F`. `return` and `restart-frame` work on frames of
+  the project's code, not on SBCL's or a library's.
 
 ## Find your way
 

@@ -215,6 +215,18 @@ frame="$(grep -oE '^ +[0-9]+  \(CHOOSE 2\)' "$out" | grep -oE '[0-9]+' | head -1
 run return "$id" "$frame" 7
 expect 0 'finished' '= 8$'
 
+# A frame compiled without (debug 2), such as SBCL's EVAL, cannot return:
+# return says so, and the evaluation stays paused.
+run eval '(+ 1 (choose 2))'
+id="$(number_after 'evaluation ')"
+frame="$(grep -oE '^ +[0-9]+  \(SB-INT:SIMPLE-EVAL-IN-LEXENV' "$out" | grep -oE '[0-9]+' | head -1)"
+run return "$id" "$frame" 7
+expect 1 "Frame $frame cannot return"
+run status
+expect 0 "evaluation $id is paused"
+run abort "$id"
+expect 0 "evaluation $id was aborted"
+
 # A break pauses too, and continues.
 run eval '(progn (break "look") :went-on)'
 expect 1 'SIMPLE-CONDITION: look' 'continue +Return from BREAK'
